@@ -1,0 +1,59 @@
+
+============================================================
+              AQUAlens AI - O1 EXTRACTION REPORT
+============================================================
+
+Timestamp:
+2026-08-24 19:40:44
+
+Dataset:
+data/raw/UIEB
+
+------------------------------------------------------------
+DATASET STATISTICS
+------------------------------------------------------------
+
+Images discovered       : 890
+Successfully processed  : 890
+Failed                  : 0
+Skipped / already done  : 0
+
+Success rate            : 100.00%
+Failure rate            : 0.00%
+
+------------------------------------------------------------
+FEATURE STATISTICS
+------------------------------------------------------------
+
+Visual features/image   : 99
+
+Feature groups:
+    Colour
+    Texture
+    Structural
+
+------------------------------------------------------------
+PROCESSING PERFORMANCE
+------------------------------------------------------------
+
+Total processing time   : 4.95 minutes
+
+Average time/image      : 0.334 seconds
+
+------------------------------------------------------------
+OUTPUTS
+------------------------------------------------------------
+
+Feature vectors:
+results/O1\feature_vectors.csv
+
+Failed images:
+results/O1\extraction_failures.csv
+
+------------------------------------------------------------
+STATUS
+------------------------------------------------------------
+
+Objective 1 batch feature extraction completed.
+
+============================================================

@@ -1,0 +1,26 @@
+{
+    "dataset": "UIEB",
+    "dataset_path": "C:\\Users\\hp\\Desktop\\VSC\\Hazel.js\\AquaLens-AI\\data\\raw\\UIEB\\raw-890",
+    "summary": {
+        "total_images": 890,
+        "readable_images": 890,
+        "unreadable_images": 0,
+        "unique_filenames": 890,
+        "duplicate_filename_count": 0
+    },
+    "file_formats": {
+        ".png": 890
+    },
+    "channels": {
+        "3": 890
+    },
+    "resolution": {
+        "minimum_width": 225,
+        "maximum_width": 2180,
+        "minimum_height": 159,
+        "maximum_height": 1450,
+        "unique_resolutions": 289
+    },
+    "duplicate_filenames": {},
+    "unreadable_images": []
+}

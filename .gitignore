@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Environment
+.env
+
+# Datasets
+data/raw/
+data/processed/
+
+# Large generated files
+*.zip
+*.tar
+*.tar.gz
+
+# IDE
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
