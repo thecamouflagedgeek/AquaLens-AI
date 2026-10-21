@@ -21,3 +21,5 @@ data/processed/
 # OS
 .DS_Store
 Thumbs.db
+# Local account and session database
+backend/runtime/
