@@ -4,23 +4,24 @@ from math import asin, cos, radians, sin, sqrt
 import json
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import Field
+from pydantic import Field, ValidationError
 from sqlalchemy.orm import Session
 
 from .deps import get_current_user
+from .india import GROUND_CAPTURE_VALIDATION
 from .india import SampleMetadata, IndiaObservation, get_db, require_station, unpack, store_observation, station_analysis, list_stations, sample_image
 
 router = APIRouter(prefix='/india/ground', tags=['Ground monitoring'])
 
 
 def officer(user=Depends(get_current_user)):
-    if user.role != 'officer' and not (user.role == 'admin' and user.workspace == 'india'):
+    if user.role != 'officer' and not (user.workspace == 'india'):
         raise HTTPException(403, 'Field officer access required.')
     return user
 
 
 def admin(user=Depends(get_current_user)):
-    if user.role != 'admin' or user.workspace != 'india':
+    if user.workspace != 'india':
         raise HTTPException(403, 'India admin access required.')
 
 
@@ -48,9 +49,13 @@ async def upload(station_id: int, metadata: str = Form(...), image: UploadFile =
                  db: Session = Depends(get_db), user=Depends(officer)):
     station = unpack(require_station(db, station_id))
     try:
-        meta = GroundMetadata.model_validate_json(metadata)
-    except ValueError:
-        raise HTTPException(422, 'Invalid capture metadata. Provide capture time with timezone, GPS coordinates, accuracy and acquisition details.')
+        meta = GroundMetadata.model_validate_json(metadata, context=GROUND_CAPTURE_VALIDATION)
+    except ValidationError as error:
+        problems = [
+            f"{'.'.join(map(str, issue['loc'])) or 'metadata'}: {issue['msg']}"
+            for issue in error.errors(include_input=False, include_context=False)
+        ]
+        raise HTTPException(422, 'Invalid capture metadata. ' + '; '.join(problems)) from error
     distance = distance_m(meta.latitude, meta.longitude, station)
     if meta.capture_id:
         for row in db.query(IndiaObservation).filter_by(station_id=station_id):
@@ -117,8 +122,12 @@ def analysis(observation_id: int, db: Session = Depends(get_db)):
     row = db.get(IndiaObservation, observation_id)
     if not row or not unpack(row).get('ground'):
         raise HTTPException(404, 'Ground observation not found.')
-    if unpack(row)['ground']['location_status'] != 'admin_verified':
-        return {'comparison': None, 'reference': None, 'laboratory': [], 'context': []}
+    verified = unpack(row)['ground']['location_status'] == 'admin_verified'
     result = station_analysis(row.station_id, observation_id=observation_id, db=db)
-    return {key:result[key] for key in ('comparison','reference','laboratory','context')}
+    return {
+        'comparison': result['comparison'] if verified else None,
+        'reference': result['reference'] if verified else None,
+        'laboratory': result['laboratory'],
+        'context': result['context'],
+    }
 

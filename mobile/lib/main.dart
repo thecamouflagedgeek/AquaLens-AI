@@ -25,6 +25,9 @@ void main() {
       title: 'AquaLens Field',
       theme: ThemeData(
         useMaterial3: true,
+        cardTheme: const CardThemeData(color: Colors.white, elevation: 0),
+        navigationBarTheme:
+            const NavigationBarThemeData(backgroundColor: Colors.white),
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff1367cb)),
         scaffoldBackgroundColor: const Color(0xfff1f7ff),
       ),
@@ -59,10 +62,10 @@ class FieldApi {
   }
 
   Future<dynamic> get(String path) async => parse(
-    await http
-        .get(uri(path), headers: headers)
-        .timeout(const Duration(seconds: 20)),
-  );
+        await http
+            .get(uri(path), headers: headers)
+            .timeout(const Duration(seconds: 20)),
+      );
   Future<Record> login(String user, String password) async =>
       Map<String, dynamic>.from(
         parse(
@@ -117,6 +120,7 @@ class _FieldAppState extends State<FieldApp> {
       signingIn = false,
       syncing = false,
       capturing = false,
+      stationsLoaded = false,
       online = false;
   List<Record> stations = [], history = [], queue = [];
   int? stationFilter;
@@ -177,6 +181,7 @@ class _FieldAppState extends State<FieldApp> {
     );
     if (cached.isNotEmpty) {
       stations = records(jsonDecode(cached.first['stations'] as String));
+      stationsLoaded = true;
       history = records(jsonDecode(cached.first['history'] as String));
     }
     await loadQueue();
@@ -188,7 +193,9 @@ class _FieldAppState extends State<FieldApp> {
       where: 'owner=?',
       whereArgs: [owner],
       orderBy: 'rowid DESC',
-    )).map(Map<String, dynamic>.from).toList();
+    ))
+        .map(Map<String, dynamic>.from)
+        .toList();
     if (mounted) setState(() {});
   }
 
@@ -224,6 +231,7 @@ class _FieldAppState extends State<FieldApp> {
       setState(() {
         owner = '';
         stations = [];
+        stationsLoaded = false;
         history = [];
         queue = [];
         message = '';
@@ -237,7 +245,9 @@ class _FieldAppState extends State<FieldApp> {
     setState(() => syncing = true);
     try {
       stations = records(await api.get('$origin/stations'));
-      final pendingRows = queue.where((row) => row['state'] != 'Failed').toList();
+      stationsLoaded = true;
+      final pendingRows =
+          queue.where((row) => row['state'] != 'Failed').toList();
       for (final row in pendingRows.reversed) {
         await update(row, 'Uploading');
         try {
@@ -266,11 +276,14 @@ class _FieldAppState extends State<FieldApp> {
         await loadQueue();
       }
       history = records(await api.get('$origin/mine'));
-      await db.insert('cache', {
-        'owner': owner,
-        'stations': jsonEncode(stations),
-        'history': jsonEncode(history),
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await db.insert(
+          'cache',
+          {
+            'owner': owner,
+            'stations': jsonEncode(stations),
+            'history': jsonEncode(history),
+          },
+          conflictAlgorithm: ConflictAlgorithm.replace);
       online = true;
       message = '';
     } catch (e) {
@@ -283,6 +296,7 @@ class _FieldAppState extends State<FieldApp> {
         api.token = '';
         owner = '';
         stations = [];
+        stationsLoaded = false;
         history = [];
         queue = [];
         page = 0;
@@ -303,13 +317,9 @@ class _FieldAppState extends State<FieldApp> {
   }
 
   Future<void> capture() async {
-    if (capturing) return;
+    if (capturing || stations.isEmpty) return;
     setState(() => capturing = true);
     try {
-      if (stations.isEmpty)
-        throw StateError(
-          'Connect once to load registered monitoring stations.',
-        );
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied)
         permission = await Geolocator.requestPermission();
@@ -398,7 +408,7 @@ class _FieldAppState extends State<FieldApp> {
   String stationName(dynamic id) =>
       stations
           .where((s) => s['id'] == id)
-          .map((s) => '${s['river']} · ${s['name']}')
+          .map((s) => [s['river'], s['name']].whereType<String>().where((part) => part.isNotEmpty).join(' · '))
           .firstOrNull ??
       'Station #$id';
   String showTime(Object? time) =>
@@ -530,107 +540,139 @@ class _FieldAppState extends State<FieldApp> {
   }
 
   Widget home() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Container(
-        padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          gradient: const LinearGradient(
-            colors: [Color(0xff073777), Color(0xff1679d7)],
-          ),
-        ),
-        child: Text(
-          'Welcome, $owner\nField monitoring · India',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 23,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-      Wrap(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          metric('Observations', history.length),
-          metric(
-            'Analyzed',
-            history.where((r) => r['processing_status'] == 'completed').length,
-          ),
-          metric('Awaiting sync', queue.length),
-        ],
-      ),
-      FilledButton.icon(
-        onPressed: capturing ? null : capture,
-        icon: const Icon(Icons.camera_alt_outlined),
-        label: const Text('New observation'),
-      ),
-      OutlinedButton(
-        onPressed: () => setState(() => page = 2),
-        child: const Text('My observations'),
-      ),
-      Card(
-        child: ExpansionTile(
-          title: const Text('Monitoring stations'),
-          subtitle: const Text(
-            'Registered India stations available to your account',
-          ),
-          children: stations.isEmpty
-              ? [const ListTile(title: Text('No stations available.'))]
-              : stations
-                    .map(
-                      (s) => ListTile(
-                        title: Text(stationName(s['id'])),
-                        subtitle: Text(
-                          '${s['state']} · ${s['latitude']}, ${s['longitude']}',
-                        ),
-                      ),
-                    )
-                    .toList(),
-        ),
-      ),
-      const Card(
-        child: ExpansionTile(
-          title: Text('Capture guidelines'),
-          children: [
-            ListTile(
-              title: Text(
-                'Use a consistent sample chamber, camera setup and lighting. Keep the sample in focus and avoid glare. A photograph cannot establish chemical safety.',
+          Container(
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              gradient: const LinearGradient(
+                colors: [Color(0xff073777), Color(0xff1679d7)],
               ),
             ),
-          ],
-        ),
-      ),
-    ],
-  );
+            child: Text(
+              'Welcome, $owner\nField monitoring · India',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 23,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 4,
+            runSpacing: 6,
+            children: [
+              metric('Observations', history.length),
+              metric(
+                'Analyzed',
+                history
+                    .where((r) => r['processing_status'] == 'completed')
+                    .length,
+              ),
+              metric('Awaiting sync', queue.length),
+            ],
+          ),
+          FilledButton.icon(
+            onPressed: () => setState(() => page = 1),
+            icon: const Icon(Icons.camera_alt_outlined),
+            label: const Text('New observation'),
+          ),
+          OutlinedButton(
+            onPressed: () => setState(() => page = 2),
+            child: const Text('My observations'),
+          ),
+          Card(
+            child: ExpansionTile(
+              title: const Text('Monitoring stations'),
+              subtitle: const Text(
+                'Registered India stations available to your account',
+              ),
+              children: stations.isEmpty
+                  ? [ListTile(title: Text(stationAvailability))]
+                  : stations
+                      .map(
+                        (s) => ListTile(
+                          title: Text(stationName(s['id'])),
+                          subtitle: Text(
+                            '${s['state']} · ${s['latitude']}, ${s['longitude']}',
+                          ),
+                        ),
+                      )
+                      .toList(),
+            ),
+          ),
+          const Card(
+            child: ExpansionTile(
+              title: Text('Capture guidelines'),
+              children: [
+                ListTile(
+                  title: Text(
+                    'Use a consistent sample chamber, camera setup and lighting. Keep the sample in focus and avoid glare. A photograph cannot establish chemical safety.',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
   Widget metric(String name, int count) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(13),
-      child: Text('$count\n$name'),
-    ),
-  );
+        child: Padding(
+          padding: const EdgeInsets.all(13),
+          child: Text('$count\n$name'),
+        ),
+      );
+  String get stationAvailability {
+    if (syncing) return 'Checking monitoring stations…';
+    if (stationsLoaded && online) {
+      return 'No monitoring stations are registered. In AquaLens India, choose Register station, then refresh here.';
+    }
+    return 'Monitoring stations are unavailable. Check the backend connection and refresh.';
+  }
+
   Widget capturePage() => Card(
-    child: ListTile(
-      leading: const Icon(Icons.camera_alt_outlined),
-      title: const Text('Capture water sample'),
-      subtitle: const Text(
-        'Camera and GPS are required. Captures can be queued offline.',
-      ),
-      trailing: FilledButton(
-        onPressed: capturing ? null : capture,
-        child: Text(capturing ? 'Opening…' : 'Capture'),
-      ),
-    ),
-  );
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Icon(Icons.camera_alt_outlined,
+                  size: 40, color: Color(0xff1367cb)),
+              const SizedBox(height: 16),
+              Text('Capture water sample',
+                  style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 8),
+              Text(stations.isEmpty
+                  ? stationAvailability
+                  : 'Take a geotagged photo and confirm its monitoring station. You can queue captures offline.'),
+              const SizedBox(height: 16),
+              if (stations.isEmpty)
+                OutlinedButton.icon(
+                  onPressed: syncing ? null : sync,
+                  icon: const Icon(Icons.sync),
+                  label: const Text('Refresh stations'),
+                )
+              else
+                FilledButton.icon(
+                  onPressed: capturing ? null : capture,
+                  icon: const Icon(Icons.camera_alt_outlined),
+                  label: Text(capturing ? 'Opening camera…' : 'Open camera'),
+                ),
+            ],
+          ),
+        ),
+      );
   Widget profile() => Card(
-    child: ListTile(
-      title: Text(owner),
-      subtitle: Text('Field officer · ${online ? 'Connected' : 'Offline'}'),
-      trailing: TextButton(
-        onPressed: syncing || capturing ? null : logout,
-        child: const Text('Sign out'),
-      ),
-    ),
-  );
+        child: ListTile(
+          title: Text(owner),
+          subtitle: Text('Field officer · ${online ? 'Connected' : 'Offline'}'),
+          trailing: TextButton(
+            onPressed: syncing || capturing ? null : logout,
+            child: const Text('Sign out'),
+          ),
+        ),
+      );
   Widget historyPage() {
     final filtered = history.where((row) {
       final time = DateTime.tryParse(row['timestamp'].toString())?.toLocal();
@@ -775,11 +817,11 @@ class _FieldAppState extends State<FieldApp> {
 }
 
 double distance(Position gps, Record station) => Geolocator.distanceBetween(
-  gps.latitude,
-  gps.longitude,
-  (station['latitude'] as num).toDouble(),
-  (station['longitude'] as num).toDouble(),
-);
+      gps.latitude,
+      gps.longitude,
+      (station['latitude'] as num).toDouble(),
+      (station['longitude'] as num).toDouble(),
+    );
 
 class CaptureReview extends StatefulWidget {
   final String image;
@@ -813,6 +855,21 @@ class _CaptureReviewState extends State<CaptureReview> {
   late String river;
   late int station;
   String season = 'Unspecified', sampleType = 'Surface water sample';
+
+  void autofillCaptureDetails() {
+    const defaults = {
+      'camera': 'Rear smartphone camera (model not recorded)',
+      'camera_settings': 'Exposure, ISO and white balance not recorded',
+      'illumination': 'Not recorded',
+      'preparation': 'Not recorded',
+      'capture_protocol': 'Not recorded',
+    };
+    for (final entry in defaults.entries) {
+      final controller = inputs[entry.key]!;
+      if (controller.text.trim().isEmpty) controller.text = entry.value;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -830,126 +887,137 @@ class _CaptureReviewState extends State<CaptureReview> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('New observation')),
-    body: Form(
-      key: form,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Image.file(
-              File(widget.image),
-              height: 230,
-              fit: BoxFit.contain,
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Discard / retake'),
-          ),
-          Text(
-            'Captured (UTC): ${widget.captured.toIso8601String()}\nGPS: ${widget.gps.latitude}, ${widget.gps.longitude} · ±${widget.gps.accuracy.round()} m',
-          ),
-          const Text(
-            'Nearest registered station is suggested. Confirm the actual sampling location.',
-          ),
-          DropdownButtonFormField<String>(
-            value: river,
-            decoration: const InputDecoration(labelText: 'River'),
-            items: [
-              for (final r
-                  in widget.stations.map((s) => s['river'] as String).toSet())
-                DropdownMenuItem(value: r, child: Text(r)),
-            ],
-            onChanged: (v) {
-              if (v != null)
-                setState(() {
-                  river = v;
-                  station =
-                      widget.stations.firstWhere((s) => s['river'] == v)['id']
-                          as int;
-                });
-            },
-          ),
-          DropdownButton<int>(
-            value: station,
-            isExpanded: true,
-            onChanged: (v) {
-              if (v != null) setState(() => station = v);
-            },
-            items: [
-              for (final s in widget.stations.where((s) => s['river'] == river))
-                DropdownMenuItem(
-                  value: s['id'] as int,
-                  child: Text(
-                    '${s['name']} · ${distance(widget.gps, s).round()} m',
-                    overflow: TextOverflow.ellipsis,
-                  ),
+        appBar: AppBar(title: const Text('New observation')),
+        body: Form(
+          key: form,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.file(
+                  File(widget.image),
+                  height: 230,
+                  fit: BoxFit.contain,
                 ),
-            ],
-          ),
-          DropdownButtonFormField<String>(
-            value: sampleType,
-            decoration: const InputDecoration(labelText: 'Sample type'),
-            items: [
-              for (final type in [
-                'Surface water sample',
-                'Collected chamber sample',
-                'Other',
-              ])
-                DropdownMenuItem(value: type, child: Text(type)),
-            ],
-            onChanged: (v) => setState(() => sampleType = v!),
-          ),
-          DropdownButtonFormField<String>(
-            value: season,
-            decoration: const InputDecoration(labelText: 'Season'),
-            items: [
-              for (final s in [
-                'Unspecified',
-                'Pre-monsoon',
-                'Monsoon',
-                'Post-monsoon',
-                'Winter',
-              ])
-                DropdownMenuItem(value: s, child: Text(s)),
-            ],
-            onChanged: (v) => setState(() => season = v!),
-          ),
-          for (final field in inputs.entries)
-            TextFormField(
-              controller: field.value,
-              decoration: InputDecoration(
-                labelText: field.key.replaceAll('_', ' '),
               ),
-              maxLength: switch (field.key) {
-                'camera' => 160,
-                'illumination' || 'capture_protocol' => 300,
-                'notes' => 2000,
-                _ => 500,
-              },
-              validator: (v) =>
-                  field.key != 'notes' && (v?.trim().length ?? 0) < 2
-                  ? 'Required for reproducible analysis'
-                  : null,
-            ),
-          FilledButton(
-            onPressed: () {
-              if (form.currentState!.validate())
-                Navigator.pop(context, {
-                  for (final e in inputs.entries) e.key: e.value.text.trim(),
-                  'station': station,
-                  'season': season,
-                  'sample_type': sampleType,
-                });
-            },
-            child: const Text('Save to upload queue'),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Discard / retake'),
+              ),
+              Text(
+                'Captured (UTC): ${widget.captured.toIso8601String()}\nGPS: ${widget.gps.latitude}, ${widget.gps.longitude} · ±${widget.gps.accuracy.round()} m',
+              ),
+              const Text(
+                'Nearest registered station is suggested. Confirm the actual sampling location.',
+              ),
+              DropdownButtonFormField<String>(
+                value: river,
+                decoration: const InputDecoration(labelText: 'River'),
+                items: [
+                  for (final r in widget.stations
+                      .map((s) => s['river'] as String)
+                      .toSet())
+                    DropdownMenuItem(value: r, child: Text(r.isEmpty ? 'No river' : r)),
+                ],
+                onChanged: (v) {
+                  if (v != null)
+                    setState(() {
+                      river = v;
+                      station = widget.stations
+                          .firstWhere((s) => s['river'] == v)['id'] as int;
+                    });
+                },
+              ),
+              DropdownButton<int>(
+                value: station,
+                isExpanded: true,
+                onChanged: (v) {
+                  if (v != null) setState(() => station = v);
+                },
+                items: [
+                  for (final s
+                      in widget.stations.where((s) => s['river'] == river))
+                    DropdownMenuItem(
+                      value: s['id'] as int,
+                      child: Text(
+                        '${s['name']} · ${distance(widget.gps, s).round()} m',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+              ),
+              DropdownButtonFormField<String>(
+                value: sampleType,
+                decoration: const InputDecoration(labelText: 'Sample type'),
+                items: [
+                  for (final type in [
+                    'Surface water sample',
+                    'Collected chamber sample',
+                    'Other',
+                  ])
+                    DropdownMenuItem(value: type, child: Text(type)),
+                ],
+                onChanged: (v) => setState(() => sampleType = v!),
+              ),
+              DropdownButtonFormField<String>(
+                value: season,
+                decoration: const InputDecoration(labelText: 'Season'),
+                items: [
+                  for (final s in [
+                    'Unspecified',
+                    'Pre-monsoon',
+                    'Monsoon',
+                    'Post-monsoon',
+                    'Winter',
+                  ])
+                    DropdownMenuItem(value: s, child: Text(s)),
+                ],
+                onChanged: (v) => setState(() => season = v!),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: autofillCaptureDetails,
+                icon: const Icon(Icons.auto_fix_high),
+                label: const Text('Auto-fill capture details'),
+              ),
+              const Text(
+                'Fills blank capture details. Unknown values are marked as not recorded.',
+              ),
+              for (final field in inputs.entries)
+                TextFormField(
+                  controller: field.value,
+                  decoration: InputDecoration(
+                    labelText: field.key.replaceAll('_', ' '),
+                  ),
+                  maxLength: switch (field.key) {
+                    'camera' => 160,
+                    'illumination' || 'capture_protocol' => 300,
+                    'notes' => 2000,
+                    _ => 500,
+                  },
+                  validator: (v) =>
+                      field.key != 'notes' && (v?.trim().length ?? 0) < 2
+                          ? 'Required for reproducible analysis'
+                          : null,
+                ),
+              FilledButton(
+                onPressed: () {
+                  if (form.currentState!.validate())
+                    Navigator.pop(context, {
+                      for (final e in inputs.entries)
+                        e.key: e.value.text.trim(),
+                      'station': station,
+                      'season': season,
+                      'sample_type': sampleType,
+                    });
+                },
+                child: const Text('Save to upload queue'),
+              ),
+            ],
           ),
-        ],
-      ),
-    ),
-  );
+        ),
+      );
 }
 
 class ObservationDetail extends StatefulWidget {

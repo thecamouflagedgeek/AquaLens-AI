@@ -3,7 +3,7 @@ import hashlib
 import json
 import math
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Optional
@@ -60,11 +60,14 @@ class StrictInput(BaseModel):
 
 class StationInput(StrictInput):
     name: str = Field(min_length=2, max_length=160)
-    river: Literal['Ganga', 'Mahanadi', 'Narmada']
+    river: Literal['', 'Ganga', 'Mahanadi', 'Godavari', 'Narmada'] = ''
     state: str = Field(min_length=2, max_length=80)
     latitude: float = Field(ge=6, le=38)
     longitude: float = Field(ge=68, le=98)
     coordinate_source: str = Field(min_length=4, max_length=500)
+
+
+GROUND_CAPTURE_VALIDATION = {'capture_clock_skew': timedelta(minutes=5)}
 
 
 class SampleMetadata(StrictInput):
@@ -80,10 +83,13 @@ class SampleMetadata(StrictInput):
 
     @field_validator('timestamp')
     @classmethod
-    def timezone_required(cls, value):
+    def timezone_required(cls, value, info):
         if value.tzinfo is None:
             raise ValueError('Sampling timestamp must include a timezone.')
-        if value > datetime.now(timezone.utc):
+        clock_skew = (info.context or {}).get('capture_clock_skew', timedelta())
+        if value > datetime.now(timezone.utc) + clock_skew:
+            if clock_skew:
+                raise ValueError('Capture time is ahead of the server. Enable automatic date and time on the phone and PC, then retry once the server clock has caught up.')
             raise ValueError('Sampling timestamp cannot be in the future.')
         return value
 
@@ -175,7 +181,9 @@ async def upload_observation(station_id: int, metadata: str = Form(...), image: 
 async def store_observation(station_id, metadata, image, db, ground=None):
     require_station(db, station_id)
     try:
-        meta = SampleMetadata.model_validate_json(metadata)
+        meta = SampleMetadata.model_validate_json(
+            metadata, context=GROUND_CAPTURE_VALIDATION if ground is not None else None,
+        )
     except ValueError as error:
         raise HTTPException(422, f'Invalid sample metadata: {error}')
     contents = await image.read(12 * 1024 * 1024 + 1)

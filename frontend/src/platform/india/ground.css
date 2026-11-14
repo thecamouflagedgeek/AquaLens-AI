@@ -13,3 +13,4 @@
 .in-monitoring-modes button { border:1px solid #cfe0f6; border-radius:999px; padding:8px 12px; background:white; color:#163f79; }
 .in-monitoring-modes button[aria-pressed=true] { color:white; background:#1659b4; }
 @media(max-width:950px) { .in-ground-grid,.in-ground-grid:has(> :nth-child(2):last-child) { grid-template-columns:minmax(0,1fr); } }
+@media (min-width: 480px) { .in-ground-metadata { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem 1rem; } } .in-ground-metadata dt { font-weight: 600; } .in-ground-metadata dd { margin: 0; }
