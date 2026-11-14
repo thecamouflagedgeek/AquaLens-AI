@@ -1,9 +1,8 @@
-@import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500;600;700&display=swap");
 
 :root {
-  font-family: "DM Sans", sans-serif;
+  font-family: "Inter", sans-serif;
   color: #f4f5f4;
-  background: #151820;
+  background: #061a37;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
 }
@@ -123,7 +122,7 @@ section {
   top: 75px;
   left: 0;
   right: 0;
-  background: #0b2030;
+  background: #092958;
   z-index: 99;
   padding: 30px 6%;
   display: flex;
@@ -165,7 +164,7 @@ section {
 .depth-progress {
   width: 100%;
   height: 100%;
-  background: #df8752;
+  background: #2196F3;
   transform-origin: top;
 }
 
@@ -174,7 +173,7 @@ section {
 .ocean-hero {
   min-height: 108vh;
   min-height: 108svh;
-  background: #125c88;
+  background: #0D47A1;
   overflow: hidden;
 }
 
@@ -182,7 +181,7 @@ section {
   position: absolute;
   inset: -10% 0 0;
   background-image:
-    linear-gradient(180deg, #174d82, #67a8d0);
+    linear-gradient(180deg, #0D47A1, #90CAF9);
   background-position: center;
   background-size: cover;
 }
@@ -215,7 +214,7 @@ section {
 }
 
 .hero-copy h1 {
-  font-family: "Barlow Condensed", sans-serif;
+  font-family: "Inter", sans-serif;
   font-size: clamp(75px, 9.5vw, 160px);
   font-weight: 800;
   line-height: 0.85;
@@ -224,7 +223,7 @@ section {
 }
 
 .hero-copy h1 span {
-  color: #ec8c4b;
+  color: #2196F3;
 }
 
 .hero-description {
@@ -247,7 +246,7 @@ section {
   gap: 7px;
   font-size: 9px;
   letter-spacing: 2px;
-  color: #e2eaf0;
+  color: #E3F2FD;
 }
 
 .orange-button {
@@ -257,7 +256,7 @@ section {
   gap: 25px;
   padding: 17px 30px;
   border-radius: 40px;
-  background: #c85e26;
+  background: #0D47A1;
   color: #fff;
   font-size: 11px;
   letter-spacing: 2px;
@@ -267,7 +266,7 @@ section {
 }
 
 .orange-button:hover {
-  background: #e37b3c;
+  background: #2196F3;
 }
 
 .hero-boat {
@@ -378,8 +377,8 @@ section {
     linear-gradient(
       180deg,
       #063e63,
-      #052c47 45%,
-      #101d2b 100%
+      #092958 45%,
+      #061a37 100%
     );
   overflow: hidden;
 }
@@ -436,7 +435,7 @@ section {
 }
 
 .mission-grid h2 {
-  font-family: "Barlow Condensed", sans-serif;
+  font-family: "Inter", sans-serif;
   font-size: clamp(68px, 8vw, 125px);
   line-height: 0.95;
   letter-spacing: 0.01em;
@@ -487,15 +486,15 @@ section {
   background:
     linear-gradient(
       180deg,
-      #101d2b 0%,
+      #061a37 0%,
       #171d27 35%,
-      #191a23 100%
+      #061a37 100%
     );
   padding: 140px 9% 160px;
 }
 
 .expedition-heading {
-  font-family: "Barlow Condensed", sans-serif;
+  font-family: "Inter", sans-serif;
   font-size: clamp(85px, 11vw, 170px);
   font-weight: 700;
   line-height: 0.85;
@@ -614,7 +613,7 @@ section {
 }
 
 .stop-copy h3 {
-  font-family: "Barlow Condensed", sans-serif;
+  font-family: "Inter", sans-serif;
   font-size: clamp(48px, 5.5vw, 85px);
   line-height: 0.95;
   font-weight: 600;
@@ -645,7 +644,7 @@ section {
 /* RESEARCH FACTS */
 
 .research-facts {
-  background: #191a23;
+  background: #061a37;
   padding: 110px 9%;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
@@ -660,7 +659,7 @@ section {
 
 .fact strong {
   display: block;
-  font-family: "Barlow Condensed", sans-serif;
+  font-family: "Inter", sans-serif;
   font-size: clamp(50px, 6vw, 95px);
   font-weight: 400;
   line-height: 1;
@@ -693,9 +692,9 @@ section {
     ),
     linear-gradient(
       180deg,
-      #191a23,
+      #061a37,
       #0b1522 45%,
-      #020b16 100%
+      #061a37 100%
     );
   display: flex;
   align-items: center;
@@ -736,7 +735,7 @@ section {
 }
 
 .deep-content h2 {
-  font-family: "Barlow Condensed", sans-serif;
+  font-family: "Inter", sans-serif;
   font-size: clamp(80px, 10vw, 155px);
   line-height: 0.9;
   font-weight: 700;
@@ -780,7 +779,7 @@ section {
 }
 
 .ending-section h2 {
-  font-family: "Barlow Condensed", sans-serif;
+  font-family: "Inter", sans-serif;
   font-size: clamp(75px, 10vw, 145px);
   line-height: 0.9;
   margin: 30px 0;
@@ -795,7 +794,7 @@ section {
 /* FOOTER */
 
 .site-footer {
-  background: #020b16;
+  background: #061a37;
   padding: 80px 8% 30px;
 }
 
@@ -1046,7 +1045,7 @@ section {
 }
 
 .hero-copy h1 {
-  font-family: "Barlow Condensed", sans-serif;
+  font-family: "Inter", sans-serif;
   font-size: clamp(80px, 8.5vw, 145px);
   line-height: 0.87;
   font-weight: 800;
@@ -1078,11 +1077,11 @@ section {
 .hero-coordinate {
   border-left: 1px solid rgba(255, 255, 255, 0.65);
   padding-left: 22px;
-  color: #e9f2f8;
+  color: #E3F2FD;
 }
 
 .hero-coordinate span {
-  color: #e9f2f8;
+  color: #E3F2FD;
 }
 
 /* Boat positioning */
@@ -1112,7 +1111,7 @@ section {
     rgba(0, 105, 153, 0.35) 0%,
     rgba(0, 74, 116, 0.78) 20%,
     #043452 65%,
-    #052c47 100%
+    #092958 100%
   );
 
   clip-path: polygon(
@@ -1214,7 +1213,7 @@ section {
     transparent 0%,
     rgba(5, 44, 71, 0.35) 35%,
     rgba(5, 44, 71, 0.8) 75%,
-    #052c47 100%
+    #092958 100%
   );
 }
 
@@ -1223,9 +1222,9 @@ section {
   margin-top: -2px;
   background: linear-gradient(
     180deg,
-    #052c47 0%,
+    #092958 0%,
     #062b44 35%,
-    #101d2b 100%
+    #061a37 100%
   );
 }
 

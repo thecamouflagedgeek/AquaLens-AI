@@ -1,0 +1,34 @@
+.in-lab-dashboard { display:grid; gap:14px; min-width:0; }
+.in-lab-dashboard .in-card { min-width:0; }
+.in-lab-chart { height:250px; min-width:0; font-size:11px; }
+.in-lab-kpis,.in-lab-months { display:grid; grid-template-columns:repeat(auto-fit,minmax(86px,1fr)); gap:8px; }
+.in-lab-kpis > div,.in-lab-months button { border:1px solid #dce7fa; border-radius:10px; padding:10px; background:#f3f8ff; color:#17345d; overflow-wrap:anywhere; }
+.in-lab-kpis dd { margin:5px 0; font-weight:700; }
+.in-lab-controls { display:flex; flex-wrap:wrap; align-items:end; gap:8px; }
+.in-lab-dashboard :is(select,input) { max-width:100%; padding:6px; border:1px solid #b7cce7; border-radius:6px; background:#fff; }
+.in-lab-months button { cursor:pointer; }
+.in-lab-months button[aria-pressed="true"] { outline:2px solid #1659b4; }
+.in-lab-months strong { display:block; }
+.in-lab-dashboard details { border-top:1px solid #dce7fa; margin-top:10px; padding-top:10px; }
+.in-lab-dashboard summary,.in-lab-dashboard details dt { font-weight:650; }
+.in-lab-dashboard summary { cursor:pointer; }
+.in-lab-dashboard details dd { margin:2px 0 9px; }
+@media print {
+  .india-app:has(.in-lab-dashboard) :is(.in-topbar,.in-welcome,.in-filters,.in-map-dashboard-canvas,.in-lab-controls,.in-footer) { display:none!important; }
+  .india-app:has(.in-lab-dashboard) :is(.in-shell,.in-page-split) { display:block; }
+  .in-lab-dashboard .in-table-wrap { max-height:none; overflow:visible; }
+  .in-lab-chart { break-inside:avoid; }
+}
+
+.in-lab-assessment { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr); gap:14px; }
+.in-lab-score { color:#1659b4; font-size:clamp(1.25rem,2.5vw,2rem); }
+.in-lab-bullet { margin-top:16px; }
+.in-lab-bullet-track { position:relative; height:14px; background:#e8f0fa; border-radius:7px; }
+.in-lab-bullet-track i { position:absolute; height:100%; background:#a8d6f6; border-radius:7px; }
+.in-lab-bullet-track b { position:absolute; width:3px; height:20px; top:-3px; background:#163f79; }
+@media(max-width:740px) { .in-lab-assessment { grid-template-columns:minmax(0,1fr); } }
+
+.in-lab-tabs { display:flex; flex-wrap:wrap; gap:8px; }
+.in-lab-tabs button { cursor:pointer; padding:10px 16px; border:1px solid #cfe0f6; border-radius:999px; background:white; color:#163f79; }
+.in-lab-tabs button[aria-pressed="true"] { background:#1659b4; color:white; border-color:#1659b4; }
+@media print { .in-lab-tabs { display:none; } }

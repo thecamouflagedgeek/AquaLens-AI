@@ -37,6 +37,7 @@ class UserCreate(BaseModel):
 
 
 class UserOut(BaseModel):
+    workspace: str = "existing"
     id: int
     username: str
     email: str

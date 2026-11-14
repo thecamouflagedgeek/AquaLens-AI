@@ -1,0 +1,22 @@
+
+{
+  "user_credentials": {
+    "username": "hazel2003",
+    "password": "Universe2003!"
+  },
+  "search_parameters": {
+    "datasetId": "E06OCM_L2C_LAC_GA",
+    "startTime": "2025-05-05",
+    "endTime": "2026-11-12",
+    "count": "20",
+    "boundingBox": "82.5,25.0,83.5,25.7",
+    "gId": ""
+  },
+  "download_settings": {
+    "download_path": "downloads",
+    "organize_by_date": true,
+    "skip_user_prompt": false,
+    "generate_error_log": true,
+    "error_log_path": "error_logs"
+  }
+}

@@ -30,4 +30,17 @@ backend/runtime/
 backend/uploads/
 
 # Frontend build output
-dist/
+dist//data/OPERA/
+
+# Raw datasets
+/data/First Census of water bodies in India/
+/data/MOSDAC/downloads/
+
+# Python environment
+.venv/
+__pycache__/
+*.pyc
+
+# Local secrets
+/data/MOSDAC/config.json
+.env

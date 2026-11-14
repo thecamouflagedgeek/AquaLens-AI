@@ -13,7 +13,7 @@ export function AuthProvider({ children }) {
     });
     return () => api.interceptors.response.eject(interceptor);
   }, [cache]);
-  const login = async (credentials) => { await api.post('/auth/login', credentials); const user = await get('/auth/me'); cache.setQueryData(['session'], user); };
+  const login = async (credentials) => { await cache.cancelQueries({ queryKey: ['session'] }); await api.post('/auth/login', credentials); const user = await get('/auth/me'); cache.setQueryData(['session'], user); return user; };
   const logout = async () => { await api.post('/auth/logout'); cache.clear(); cache.setQueryData(['session'], null); };
   return <Auth.Provider value={{user: session.data, pending: session.isPending, error: session.error, login, logout}}>{children}</Auth.Provider>;
 }

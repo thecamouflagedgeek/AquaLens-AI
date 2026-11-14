@@ -5,6 +5,7 @@ Password hashing with bcrypt and JWT token signing.
 
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
+import secrets
 import bcrypt
 import jwt
 from .config import settings
@@ -33,6 +34,7 @@ def create_access_token(subject: str, role: str, expires_delta: Optional[timedel
         expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode = {
+        "jti": secrets.token_urlsafe(24),
         "sub": str(subject),
         "role": role,
         "iat": now,

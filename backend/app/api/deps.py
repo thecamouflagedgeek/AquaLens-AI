@@ -4,34 +4,40 @@ Database session injection, JWT authentication, and Role-Based Access Control (R
 """
 
 from typing import Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
+import hashlib
+from ..core.config import settings
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from ..core.security import decode_access_token
 from ..db.session import get_db
-from ..db.models import User
+from ..db.models import User, RevokedAccessToken
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 
 def get_current_user_optional(
+    request: Request,
     token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> Optional[User]:
+    token = token or request.cookies.get(settings.SESSION_COOKIE)
     if not token:
         return None
     payload = decode_access_token(token)
-    if not payload or "sub" not in payload:
+    if not payload or "sub" not in payload or db.get(RevokedAccessToken, hashlib.sha256(token.encode()).hexdigest()):
         return None
     user = db.query(User).filter(User.username == payload["sub"]).first()
-    return user
+    return user if user and user.is_active else None
 
 
 def get_current_user(
+    request: Request,
     token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
+    token = token or request.cookies.get(settings.SESSION_COOKIE)
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -39,7 +45,7 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     payload = decode_access_token(token)
-    if not payload or "sub" not in payload:
+    if not payload or "sub" not in payload or db.get(RevokedAccessToken, hashlib.sha256(token.encode()).hexdigest()):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired access token.",

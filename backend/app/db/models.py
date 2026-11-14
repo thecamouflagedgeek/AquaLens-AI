@@ -38,6 +38,11 @@ class User(Base):
     created_at = Column(DateTime, default=utc_now, nullable=False)
 
 
+    @property
+    def workspace(self):
+        return "india" if self.username == "admin_1" else "existing"
+
+
 class WaterSource(Base):
     __tablename__ = "water_sources"
 
@@ -264,3 +269,10 @@ class AuditLog(Base):
     entity_id = Column(Integer, nullable=True)
     details_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class RevokedAccessToken(Base):
+    """Hashes of logged-out tokens, retained until their expiry."""
+    __tablename__ = "revoked_access_tokens"
+    token_hash = Column(String(64), primary_key=True)
+    expires_at = Column(DateTime, nullable=False)

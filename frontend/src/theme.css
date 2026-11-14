@@ -1,0 +1,64 @@
+:root {
+  --aqua-ice: #e3f2fd;
+  --aqua-sky: #90caf9;
+  --aqua-blue: #2196f3;
+  --aqua-royal: #0d47a1;
+  --aqua-display: "Inter", system-ui, sans-serif;
+}
+
+.portal :is(h1, h2, h3, .brand),
+.india-app :is(h1, h2, h3, .in-brand) {
+  font-family: var(--aqua-display);
+}
+
+.portal .panel,
+.india-app .in-card {
+  box-shadow: 0 6px 20px #0d47a10a;
+}
+
+.portal .primary,
+.india-app .in-button-solid {
+  background: var(--aqua-royal);
+  color: white;
+}
+.portal .primary:hover:not(:disabled),
+.india-app .in-button-solid:hover:not(:disabled) {
+  background: #0a387f;
+}
+
+.portal h1,
+.india-app .in-welcome h1 {
+  font-weight: 650;
+  letter-spacing: -0.04em;
+}
+
+.portal .fields dd,
+.india-app :is(.in-meta dd, .in-fingerprint-metrics dd),
+.portal td,
+.india-app td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Original monitoring workspace uses the same white header and icon rail as India. */
+.admin-workspace { display:grid; grid-template-columns:58px minmax(0,1fr); grid-template-rows:auto 1fr; background:#f3f7fc; }
+.admin-topbar { grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; min-height:64px; padding:10px 20px; background:white; border-bottom:1px solid #dce8f6; }
+.admin-brand { display:flex; align-items:center; gap:10px; color:var(--aqua-royal); text-decoration:none; font-size:23px; line-height:1; letter-spacing:-.05em; }
+.admin-brand svg { width:28px; height:28px; }
+.portal .admin-brand small { margin-top:5px; color:#415c7a; letter-spacing:.24em; font-size:8px; }
+.admin-account { display:flex; align-items:center; gap:9px; }
+.admin-avatar,.portal .admin-account button { width:36px; height:36px; display:grid; place-items:center; border-radius:50%; padding:0; }
+.admin-avatar { background:var(--aqua-royal); color:white; font-size:11px; font-weight:700; }
+.admin-rail { display:flex; flex-direction:column; align-items:center; gap:8px; padding:12px 0; background:white; border-right:1px solid #dce8f6; }
+.admin-rail a { display:grid; place-items:center; width:38px; height:38px; border-radius:50%; color:#415c7a; }
+.admin-rail a:is(.active,:hover) { color:var(--aqua-royal); background:var(--aqua-ice); }
+.admin-main { min-width:0; padding:20px clamp(14px,2vw,30px); }
+.admin-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; }
+.admin-heading h2 { font-size:clamp(22px,2.5vw,32px); letter-spacing:-.045em; }
+.admin-filters { background:#fff; border:1px solid #dce8f6; padding:12px; border-radius:8px; margin-bottom:16px; }
+.admin-filters .controls { margin:0; }
+.admin-main .panel { border-radius:16px; }
+@media(max-width:600px) {
+  .admin-workspace { grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto 1fr; }
+  .admin-rail { flex-direction:row; border-right:0; border-bottom:1px solid #dce8f6; padding:6px 14px; }
+  .admin-heading { align-items:flex-start; flex-direction:column; }
+}

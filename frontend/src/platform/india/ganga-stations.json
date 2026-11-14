@@ -1,0 +1,299 @@
+{
+  "source": "RS_Session_269_AU_1674_B_i.csv",
+  "headers": [
+    "DO (mg/l) (>5 mg/l) - 2022",
+    "DO (mg/l) (>5 mg/l) - 2023",
+    "DO (mg/l) (>5 mg/l) - 2024",
+    "DO (mg/l) (>5 mg/l) - 2025 (January to October 2025)",
+    "BOD (mg/l) (<3 mg/l) - 2022",
+    "BOD (mg/l) (<3 mg/l) - 2023",
+    "BOD (mg/l) (<3 mg/l) - 2024",
+    "BOD (mg/l) (<3 mg/l) - 2025 (January to October 2025)"
+  ],
+  "stations": [
+    {
+      "id": "ganga-csv-1",
+      "name": "Abandoned old bridge, Rudraprayag",
+      "state": "Uttarakhand",
+      "values": [
+        9.7,
+        7.5,
+        null,
+        9.5,
+        0.5,
+        1.5,
+        null,
+        0.5
+      ]
+    },
+    {
+      "id": "ganga-csv-2",
+      "name": "D/s of Tehri Dam",
+      "state": "Uttarakhand",
+      "values": [
+        8.5,
+        7.0,
+        8.7,
+        8.4,
+        0.5,
+        1.8,
+        1.4,
+        0.5
+      ],
+      "latitude": 30.3719,
+      "longitude": 78.4777
+    },
+    {
+      "id": "ganga-csv-3",
+      "name": "Distributing Canal, Left Bank, Rishikesh",
+      "state": "Uttarakhand",
+      "values": [
+        8.4,
+        7.3,
+        9.0,
+        8.7,
+        0.7,
+        0.8,
+        0.7,
+        0.5
+      ],
+      "latitude": 30.0725,
+      "longitude": 78.292
+    },
+    {
+      "id": "ganga-csv-4",
+      "name": "D/s of Har Ki Pauri, Dam Kothi, Haridwar",
+      "state": "Uttarakhand",
+      "values": [
+        8.7,
+        9.8,
+        9.5,
+        9.0,
+        2.7,
+        1.1,
+        1.1,
+        0.5
+      ],
+      "latitude": 29.9423,
+      "longitude": 78.1569
+    },
+    {
+      "id": "ganga-csv-5",
+      "name": "D/s of Srinagar, Kirtinagar",
+      "state": "Uttarakhand",
+      "values": [
+        5.9,
+        8.1,
+        10.2,
+        9.0,
+        0.5,
+        0.6,
+        0.5,
+        0.5
+      ],
+      "latitude": 30.2136,
+      "longitude": 78.7464
+    },
+    {
+      "id": "ganga-csv-6",
+      "name": "Fafamau, Lord Curzon Bridge, Allahabad",
+      "state": "Uttar Pradesh",
+      "values": [
+        7.1,
+        7.6,
+        8.3,
+        8.5,
+        4.3,
+        3.9,
+        4.6,
+        3.4
+      ],
+      "latitude": 25.5075,
+      "longitude": 81.8658
+    },
+    {
+      "id": "ganga-csv-7",
+      "name": "Balu ghat bridge, Chunar",
+      "state": "Uttar Pradesh",
+      "values": [
+        6.8,
+        8.0,
+        8.0,
+        7.8,
+        4.8,
+        4.8,
+        4.7,
+        3.5
+      ]
+    },
+    {
+      "id": "ganga-csv-8",
+      "name": "D/s of Ghazipur, Abdul Hameed Setu on River Ganga",
+      "state": "Uttar Pradesh",
+      "values": [
+        7.3,
+        7.2,
+        null,
+        8.7,
+        0.8,
+        1.6,
+        null,
+        3.8
+      ],
+      "latitude": 25.5884,
+      "longitude": 83.6065
+    },
+    {
+      "id": "ganga-csv-9",
+      "name": "Road bridge on River Ganga, D/s of Buxar",
+      "state": "Bihar",
+      "values": [
+        7.0,
+        7.6,
+        6.9,
+        7.2,
+        4.1,
+        3.6,
+        1.8,
+        2.4
+      ],
+      "latitude": 25.5918,
+      "longitude": 83.9861
+    },
+    {
+      "id": "ganga-csv-10",
+      "name": "D/s of Bhagalpur, Road Bridge on River Ganga",
+      "state": "Bihar",
+      "values": [
+        5.5,
+        5.0,
+        5.5,
+        7.7,
+        2.8,
+        1.2,
+        1.1,
+        1.6
+      ],
+      "latitude": 25.2777,
+      "longitude": 87.028
+    },
+    {
+      "id": "ganga-csv-11",
+      "name": "New Bridge, U/s of Patna city, Khurji",
+      "state": "Bihar",
+      "values": [
+        6.9,
+        7.2,
+        7.2,
+        7.7,
+        3.0,
+        2.6,
+        1.8,
+        2.1
+      ],
+      "latitude": 25.6533,
+      "longitude": 85.0952
+    },
+    {
+      "id": "ganga-csv-12",
+      "name": "River Ganga at Chausa, U/s of Buxar",
+      "state": "Bihar",
+      "values": [
+        6.8,
+        7.3,
+        7.0,
+        7.5,
+        2.0,
+        2.6,
+        2.0,
+        2.5
+      ],
+      "latitude": 25.5204,
+      "longitude": 83.9002
+    },
+    {
+      "id": "ganga-csv-13",
+      "name": "Sahebganj",
+      "state": "Jharkhand",
+      "values": [
+        6.9,
+        7.3,
+        6.2,
+        7.0,
+        1.6,
+        2.5,
+        1.6,
+        2.3
+      ],
+      "latitude": 25.2489,
+      "longitude": 87.6417
+    },
+    {
+      "id": "ganga-csv-14",
+      "name": "Farakka Barrage, Road Bridge",
+      "state": "West Bengal",
+      "values": [
+        5.5,
+        7.2,
+        7.0,
+        7.0,
+        5.2,
+        2.8,
+        1.3,
+        1.3
+      ],
+      "latitude": 24.801,
+      "longitude": 87.922
+    },
+    {
+      "id": "ganga-csv-15",
+      "name": "Nabadwip Bathing Ghat",
+      "state": "West Bengal",
+      "values": [
+        6.5,
+        7.3,
+        6.8,
+        7.6,
+        1.6,
+        1.4,
+        1.5,
+        1.6
+      ]
+    },
+    {
+      "id": "ganga-csv-16",
+      "name": "Chinsura , Near Hooghly, Road Bridge",
+      "state": "West Bengal",
+      "values": [
+        6.3,
+        7.1,
+        7.1,
+        7.0,
+        3.3,
+        2.4,
+        2.1,
+        1.8
+      ],
+      "latitude": 22.9068,
+      "longitude": 88.4039
+    },
+    {
+      "id": "ganga-csv-17",
+      "name": "Rajmahal at Malgodam",
+      "state": "Jharkhand",
+      "values": [
+        6.9,
+        7.1,
+        7.6,
+        7.1,
+        2.7,
+        2.4,
+        1.6,
+        1.6
+      ],
+      "latitude": 25.0546,
+      "longitude": 87.8381
+    }
+  ],
+  "coordinateSource": "https://cpcb.nic.in/openpdffile.php?id=VGVuZGVyRmlsZXMvNTMwXzE1NTM3NzM1NzVfRmluYWxBbWVuZHQtYW5kLU1pblByZUJpZC0yODAzMjAxOS5wZGY%3D"
+}

@@ -28,7 +28,7 @@
   
   --aqua-text-primary: #f0f9ff;
   --aqua-text-secondary: #94a3b8;
-  --aqua-text-muted: #64748b;
+  --aqua-text-muted: #415c7a;
   
   --aqua-radius-sm: 8px;
   --aqua-radius-md: 14px;
@@ -51,7 +51,7 @@
     linear-gradient(180deg, #07121e 0%, #050d17 100%);
   background-attachment: fixed;
   color: var(--aqua-text-primary);
-  font-family: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
   display: flex;
   flex-direction: column;
 }

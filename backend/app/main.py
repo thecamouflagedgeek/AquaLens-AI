@@ -13,10 +13,12 @@ from sqlalchemy.orm import Session
 
 from .core.config import settings
 from .core.security import hash_password
+from .core.workspaces import ensure_india_account
 from .db.session import engine, Base, get_db
 from .db.models import User, WaterSource, MonitoringStation
 from .ml.inference import get_inference_engine
 from .api import auth, sources, observations, monitoring, advanced
+from .api import india, ground
 
 
 @asynccontextmanager
@@ -45,6 +47,8 @@ async def lifespan(app: FastAPI):
             db.add(admin_user)
             db.commit()
             print("[AquaLens DB] Seeded initial admin account: admin / AquaLens2026!")
+
+        ensure_india_account(db)
 
         # Initial source & monitoring stations if empty
         source_count = db.query(WaterSource).count()
@@ -129,11 +133,24 @@ app = FastAPI(
 # CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origin for origin in settings.CORS_ORIGINS if origin != "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def check_cookie_origin(request, call_next):
+    if request.method in {"POST", "PATCH", "PUT", "DELETE"} and request.cookies.get(settings.SESSION_COOKIE):
+        origin = request.headers.get("origin")
+        if origin and origin not in [item for item in settings.CORS_ORIGINS if item != "*"]:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=403, content={"detail": "Untrusted request origin."})
+    response = await call_next(request)
+    if "/auth/" in request.url.path:
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 # Mount uploads static directory
 app.mount("/uploads", StaticFiles(directory=str(settings.UPLOAD_DIR)), name="uploads")
@@ -152,6 +169,8 @@ app.include_router(sources.router)
 app.include_router(observations.router)
 app.include_router(monitoring.router)
 app.include_router(advanced.router)
+app.include_router(india.router)
+app.include_router(ground.router)
 
 
 @app.get("/health", tags=["Operational"])
