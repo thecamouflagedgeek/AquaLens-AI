@@ -237,8 +237,8 @@ class _FieldAppState extends State<FieldApp> {
     setState(() => syncing = true);
     try {
       stations = records(await api.get('$origin/stations'));
-      for (final row
-          in queue.where((r) => r['state'] != 'Failed').reversed.toList()) {
+      final pendingRows = queue.where((row) => row['state'] != 'Failed').toList();
+      for (final row in pendingRows.reversed) {
         await update(row, 'Uploading');
         try {
           await api.upload(row);
