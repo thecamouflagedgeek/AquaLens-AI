@@ -44,3 +44,7 @@ __pycache__/
 # Local secrets
 /data/MOSDAC/config.json
 .env
+
+#build
+mobile/build/
+mobile/.dart_tool/
