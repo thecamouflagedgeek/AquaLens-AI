@@ -5,6 +5,7 @@ import FindingsDashboard from './india/FindingsDashboard';
 import narmada from './india/narmada-stations.json';
 import cwc from './india/cwc-chemical.json';
 import EarthdataScenes from './india/EarthdataScenes';
+import SatelliteHistory from './india/SatelliteHistory';
 import { RiverMeasurements, SatelliteCatalog } from './india/DatasetPanels';
 import gangaDataset from './india/ganga-stations.json';
 import FingerprintSummary from './india/FingerprintSummary';
@@ -28,7 +29,7 @@ export default function IndiaWorkspace() {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [mapSearch, setMapSearch] = useState(null);
   const [exploreOpen, setExploreOpen] = useState(false);
-  const [params, setParams] = useSearchParams(); const [dialog, setDialog] = useState(''); const [notice, setNotice] = useState(''); const [busy, setBusy] = useState(false);
+  const [params, setParams] = useSearchParams(); const [dialog, setDialog] = useState(''); const [notice, setNotice] = useState(''); const [busy, setBusy] = useState(false); const [pickPoint, setPickPoint] = useState(null); const [pickMode, setPickMode] = useState(false);
   const mode = ['ground','combined'].includes(params.get('mode')) ? params.get('mode') : 'remote';
   const stationId = params.get('station') || ''; const view = tabs.some(t => t[0] === params.get('view')) ? params.get('view') : 'overview';
   const river = params.get('river') || ''; const state = params.get('state') || ''; const start = params.get('from') || ''; const end = params.get('to') || ''; const observation = params.get('observation') || '';
@@ -170,6 +171,7 @@ export default function IndiaWorkspace() {
         </div>
       </Card>}
       {view === 'fingerprint' && Number.isFinite(mapStation?.latitude) && Number.isFinite(mapStation?.longitude) && <EarthdataScenes key={mapStation.id} site={mapStation}/>}
+      {view === 'fingerprint' && <SatelliteHistory key={'satellite-history-' + (mapStation?.id || 'none') + '-' + (stationId || '')} site={mapStation} pickMode={pickMode} picked={pickPoint} onClearPick={() => setPickPoint(null)} onTogglePick={() => { setPickPoint(null); setPickMode(open => !open); }}/>}
       {view === 'fingerprint' && datasetStation && !mapStation && <Card title="Fingerprint unavailable for this archive station"><p>No mapped coordinates are available for satellite analysis. Archive measurements are available under Findings and Context &amp; Lab.</p></Card>}
 
       {view === 'fingerprint' && station && <div className="in-detail-grid"><FingerprintSummary station={station || datasetStation} current={current} reference={reference} comparison={comparison}/><Card title="Station reference profile" hint="Frozen versions · season and acquisition matched" action={<button className="in-button-solid" disabled={!station} onClick={() => setDialog('baseline')}><Plus size={14}/>Establish reference</button>}>{reference ? <><Status value="provisional reference"/><Meta entries={{'Reference version': `#${reference.id}`, 'Reference images': reference.sample_count, 'Season': reference.season, 'Capture protocol': reference.capture_protocol, 'Period begins': `${date(reference.start)} IST`, 'Period ends': `${date(reference.end)} IST`}}/><p>{reference.notes}</p></> : <Empty>{station ? 'No reference matches the selected observation’s season and capture protocol.' : datasetStation ? 'This dataset station has water-quality measurements only. Select a registered AquaLens station to view an image-based fingerprint.' : 'Select an AquaLens station, then record reference samples.'}</Empty>}<div className="in-method-note"><CircleHelp size={17}/><p>Five distinct eligible samples enable a provisional calculation. Reference count does not establish scientific validity.</p></div>{data?.baselines?.length > 0 && <details><summary>Reference version history ({data.baselines.length})</summary>{data.baselines.map(b => <p key={b.id}>#{b.id} · {b.season} · {b.capture_protocol} · {b.sample_count} samples · {date(b.created_at)} IST</p>)}</details>}</Card><Card className="in-span-all" title="The 20-feature visual signature" hint="Actual RF input schema · individual descriptors have different units"><FeatureTable features={features}/><p className="in-fineprint">An undefined IQR scale is shown as missing. Raw colour, texture and area descriptors are not combined on a shared raw-value axis.</p></Card>{current && <Card className="in-span-all" title="Feature history" hint="Inspect raw values or compare observations against the same frozen reference"><FeatureHistory observations={data?.observations || []} timeline={data?.timeline || []} reference={reference}/></Card>}</div>}
@@ -181,7 +183,7 @@ export default function IndiaWorkspace() {
       {view === 'evidence' && <ContextLab station={station} site={datasetStation} archive={chemicalDataset} data={data} start={start} end={end} onLab={() => setDialog('laboratory')} onContext={() => setDialog('context')}/>}
       {data?.limitations && view !== 'overview' && <details className="in-limitations"><summary>Methodology & limitations</summary><p>{data.limitations}</p></details>}
         </div>
-        {!["findings", "evidence"].includes(view) && <div className="in-map-dashboard-canvas"><StationMap showRivers mapSearch={mapSearch} stations={mapStations} selected={mapStation} onSelect={selectStation}/></div>}
+        {!["findings", "evidence"].includes(view) && <div className="in-map-dashboard-canvas"><StationMap showRivers mapSearch={mapSearch} stations={mapStations} selected={mapStation} onSelect={selectStation} pickMode={pickMode && view === 'fingerprint'} onPickPoint={point => { setPickPoint(point); setPickMode(false); }} pickedPoint={pickPoint} pickBufferM={pickPoint?.buffer}/></div>}
       </section>}
       </>}
       <footer className="in-footer"><span><Waves size={13}/>AquaLens AI · Indian workspace</span><span>Exploratory visual monitoring. Laboratory evidence is required for chemical or safety conclusions.</span></footer>

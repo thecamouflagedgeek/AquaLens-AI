@@ -18,7 +18,9 @@ from .db.session import engine, Base, get_db
 from .db.models import User, WaterSource, MonitoringStation
 from .ml.inference import get_inference_engine
 from .api import auth, sources, observations, monitoring, advanced
-from .api import india, ground
+from .api import india, ground, satellite
+from .satellite.schema import ensure_satellite_schema
+from .satellite.service import recover_interrupted_jobs
 
 
 @asynccontextmanager
@@ -49,6 +51,25 @@ async def lifespan(app: FastAPI):
             print("[AquaLens DB] Seeded initial admin account: admin / AquaLens2026!")
 
         ensure_india_account(db)
+
+    # Additive, non-destructive creation of the satellite tables only.
+    created_tables = ensure_satellite_schema(engine)
+    if created_tables:
+        print(f"[AquaLens DB] Created satellite tables: {', '.join(created_tables)}")
+
+    # A job row left queued/running belongs to a process that no longer exists (retrieval runs
+    # in a daemon thread). Mark it interrupted so the dashboard stops polling and the user can
+    # retry the remaining months. Nothing is started or deleted here.
+    try:
+        with Session(engine) as job_db:
+            interrupted = recover_interrupted_jobs(job_db)
+        if interrupted:
+            print(
+                "[AquaLens Satellite] Marked interrupted fetch job(s) from a previous process: "
+                + ", ".join(str(job_id) for job_id in interrupted)
+            )
+    except Exception as error:  # noqa: BLE001 - never block startup on job bookkeeping
+        print(f"[AquaLens Satellite Warning] Could not reconcile fetch jobs: {error}")
 
         # Initial source & monitoring stations if empty
         source_count = db.query(WaterSource).count()
@@ -171,6 +192,8 @@ app.include_router(monitoring.router)
 app.include_router(advanced.router)
 app.include_router(india.router)
 app.include_router(ground.router)
+app.include_router(satellite.router)
+app.include_router(satellite.router, prefix=api_v1_prefix)
 
 
 @app.get("/health", tags=["Operational"])

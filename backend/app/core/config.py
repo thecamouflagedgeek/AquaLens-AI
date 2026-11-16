@@ -39,14 +39,24 @@ class Settings(BaseModel):
     # Scientific thresholds
     BASELINE_MIN_OBSERVATIONS: int = int(os.getenv("BASELINE_MIN_OBSERVATIONS", "5"))
     ANOMALY_Z_THRESHOLD: float = float(os.getenv("ANOMALY_Z_THRESHOLD", "2.5"))
+
+    # Satellite acquisition (Google Earth Engine / Sentinel-2)
+    # Credentials are read from the environment only; no secret is ever stored here.
+    GEE_PROJECT_ID: str = os.getenv("GEE_PROJECT_ID", "")
+    GOOGLE_APPLICATION_CREDENTIALS: str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+    SATELLITE_COLLECTION: str = os.getenv("SATELLITE_COLLECTION", "COPERNICUS/S2_SR_HARMONIZED")
+    SATELLITE_DEFAULT_BUFFER_M: float = float(os.getenv("SATELLITE_DEFAULT_BUFFER_M", "300"))
+    SATELLITE_DEFAULT_MONTHS: int = int(os.getenv("SATELLITE_DEFAULT_MONTHS", "24"))
     
     # CORS
     CORS_ORIGINS: List[str] = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "*"
-    ]
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://localhost:5175",
+    "http://127.0.0.1:5175",
+    "*"
+]
 
 
 settings = Settings()

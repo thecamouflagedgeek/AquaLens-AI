@@ -44,3 +44,8 @@ __pycache__/
 # Local secrets
 /data/MOSDAC/config.json
 .env
+# Google Earth Engine / OAuth credentials (never commit)
+*service-account*.json
+*credentials*.json
+client_secret*.json
+.config/earthengine/

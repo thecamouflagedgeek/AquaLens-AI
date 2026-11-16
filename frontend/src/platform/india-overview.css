@@ -90,6 +90,9 @@
   background: #E3F2FD;
 }
 .in-map-dashboard-canvas { position: absolute; inset: 0; z-index: 0; }
+/* Opt-in click-to-select mode for the satellite panel; nothing else changes cursor behaviour. */
+.in-map-picking { cursor: crosshair; }
+.in-map-picking .leaflet-container { cursor: crosshair; }
 .in-map-dashboard-canvas .in-map,
 .in-map-dashboard-canvas .leaflet-container { height: 100%; border-radius: 0; }
 .in-map-dashboard-canvas .leaflet-tile-pane { filter: saturate(.35) contrast(.91) brightness(1.07); }

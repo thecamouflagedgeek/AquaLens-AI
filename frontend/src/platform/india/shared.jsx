@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Circle, CircleMarker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar } from 'recharts';
 import { MapPin, ArrowUpRight, Waves } from 'lucide-react';
 import { api } from '../api';
@@ -29,17 +29,39 @@ export function SampleImage({ observation, label }) {
   }, [observation?.id]);
   return <figure className="in-sample">{src && !failed ? <img src={src} alt={`${label} water sample`} onError={() => setFailed(true)}/> : <Empty>{failed ? 'Original image unavailable.' : observation ? 'Loading original image…' : 'No sample recorded.'}</Empty>}<figcaption><strong>{label}</strong><span>{date(observation?.timestamp)} {observation && 'IST'}</span></figcaption></figure>;
 }
-function MapFocus({ stations, selected, countryOverview, mapSearch }) {
+// Click-to-pick handler. Rendered only while a caller explicitly turns picking on, so the
+// map stays inert for every other screen that reuses StationMap.
+function MapPicker({ enabled, onPickPoint }) {
+  useMapEvents({
+    click(event) {
+      if (!enabled || !onPickPoint) return;
+      onPickPoint({ latitude: event.latlng.lat, longitude: event.latlng.lng });
+    },
+  });
+  return null;
+}
+
+function MapFocus({ stations, selected, countryOverview, mapSearch, pickedPoint }) {
   const map = useMap();
   useEffect(() => {
     const observer = new ResizeObserver(() => map.invalidateSize({ pan: false }));
     observer.observe(map.getContainer());
     return () => observer.disconnect();
   }, [map]);
-  useEffect(() => { map.invalidateSize(); if (selected) map.flyTo([selected.latitude, selected.longitude], 11, { animate: !matchMedia('(prefers-reduced-motion: reduce)').matches }); else if (mapSearch?.river && riverPositions(mapSearch.river).length) map.fitBounds(riverPositions(mapSearch.river), { padding: [24, 24], maxZoom: 9 }); else if (countryOverview) map.fitBounds([[7, 67], [37, 98]], { padding: [18, 18] }); else if (stations.length) map.fitBounds(stations.map(s => [s.latitude, s.longitude]), { padding: [35, 35], maxZoom: 10 }); else map.setView([22.5, 80.5], 4); }, [map, selected?.id, countryOverview, mapSearch, stations.map(s => s.id).join(',')]);
+  useEffect(() => { map.invalidateSize(); if (pickedPoint) map.flyTo([pickedPoint.latitude, pickedPoint.longitude], Math.max(map.getZoom(), 11), { animate: !matchMedia('(prefers-reduced-motion: reduce)').matches }); else if (selected) map.flyTo([selected.latitude, selected.longitude], 11, { animate: !matchMedia('(prefers-reduced-motion: reduce)').matches }); else if (mapSearch?.river && riverPositions(mapSearch.river).length) map.fitBounds(riverPositions(mapSearch.river), { padding: [24, 24], maxZoom: 9 }); else if (countryOverview) map.fitBounds([[7, 67], [37, 98]], { padding: [18, 18] }); else if (stations.length) map.fitBounds(stations.map(s => [s.latitude, s.longitude]), { padding: [35, 35], maxZoom: 10 }); else map.setView([22.5, 80.5], 4); }, [map, pickedPoint?.latitude, pickedPoint?.longitude, selected?.id, countryOverview, mapSearch, stations.map(s => s.id).join(',')]);
   return null;
 }
-export function StationMap({ stations, selected, onSelect, showRivers = false, mapSearch }) {
+export function StationMap({
+  stations,
+  selected,
+  onSelect,
+  showRivers = false,
+  mapSearch,
+  pickMode = false,
+  onPickPoint,
+  pickedPoint,
+  pickBufferM,
+}) {
   const [tileError, setTileError] = useState(false);
   const [satellite, setSatellite] = useState(false);
   const imageryUrl = import.meta.env.VITE_INDIA_SATELLITE_TILE_URL;
@@ -47,7 +69,7 @@ export function StationMap({ stations, selected, onSelect, showRivers = false, m
   const imageryCredit = import.meta.env.VITE_INDIA_SATELLITE_ATTRIBUTION;
   const canShowImagery = imageryUrl && imageryLabel && imageryCredit;
   const showImagery = canShowImagery && satellite;
-  return <div className="in-map"><MapContainer center={[22.5, 80.5]} zoom={4} scrollWheelZoom={false}>{showImagery ? <TileLayer key="imagery" url={imageryUrl} attribution={imageryCredit} maxNativeZoom={14} eventHandlers={{ tileerror: () => setTileError(true) }}/> : <TileLayer key="osm" eventHandlers={{ tileerror: () => setTileError(true) }} url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'/>}{showRivers && <RiverLines/>}<MapFocus stations={stations} selected={selected} countryOverview={showRivers} mapSearch={mapSearch}/>{stations.map(s => <CircleMarker key={s.id} center={[s.latitude, s.longitude]} radius={s.id === selected?.id ? 10 : 6} pathOptions={{ color: '#fff', fillColor: s.historical ? '#007d70' : '#0D47A1', fillOpacity: 1, weight: 2 }} eventHandlers={{ click: () => onSelect(String(s.id)) }}><Popup><strong>{s.name}</strong><p>{s.river} · {s.state}</p>{s.historical && s.river !== 'Ganga' ? <small>{s.river === 'Narmada' ? 'Narmada historical station' : 'CWC historical station'}<br/>{s.coordinate_source}</small> : s.historical ? <small>Historical station · <a href={s.coordinate_source} target="_blank" rel="noreferrer">CPCB coordinates</a><br/>Jan–Oct 2025: DO {s.values[3] ?? 'not reported'} · BOD {s.values[7] ?? 'not reported'} (mg/L)</small> : <small>{s.coordinate_status}<br/>{s.coordinate_source}</small>}<br/><button onClick={() => onSelect(String(s.id))}>Select station</button></Popup></CircleMarker>)}</MapContainer>{canShowImagery && <button type="button" className="in-map-layer-toggle" aria-pressed={!!showImagery} onClick={() => { setTileError(false); setSatellite(value => !value); }}>{showImagery ? 'Back to OpenStreetMap' : imageryLabel}</button>}{tileError && <div className="in-map-error" role="status">{showImagery ? 'Satellite imagery could not be loaded. Switch back to OpenStreetMap.' : 'OpenStreetMap tiles could not be loaded.'}</div>}{!stations.length && <div className="in-map-note"><MapPin size={14}/> Register a station to place its recorded coordinates on the map.</div>}</div>;
+  return <div className={`in-map${pickMode ? ' in-map-picking' : ''}`}><MapContainer center={[22.5, 80.5]} zoom={4} scrollWheelZoom={false}>{showImagery ? <TileLayer key="imagery" url={imageryUrl} attribution={imageryCredit} maxNativeZoom={14} eventHandlers={{ tileerror: () => setTileError(true) }}/> : <TileLayer key="osm" eventHandlers={{ tileerror: () => setTileError(true) }} url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'/>}{showRivers && <RiverLines/>}<MapPicker enabled={pickMode} onPickPoint={onPickPoint}/><MapFocus stations={stations} selected={selected} countryOverview={showRivers} mapSearch={mapSearch} pickedPoint={pickedPoint}/>{pickedPoint && <><Circle center={[pickedPoint.latitude, pickedPoint.longitude]} radius={pickBufferM || 300} pathOptions={{ color: '#007d70', weight: 2, fillColor: '#007d70', fillOpacity: 0.12 }}/><CircleMarker center={[pickedPoint.latitude, pickedPoint.longitude]} radius={7} pathOptions={{ color: '#fff', weight: 2, fillColor: '#007d70', fillOpacity: 1 }}/></>}{stations.map(s => <CircleMarker key={s.id} center={[s.latitude, s.longitude]} radius={s.id === selected?.id ? 10 : 6} pathOptions={{ color: '#fff', fillColor: s.historical ? '#007d70' : '#0D47A1', fillOpacity: 1, weight: 2 }} eventHandlers={{ click: () => onSelect(String(s.id)) }}><Popup><strong>{s.name}</strong><p>{s.river} · {s.state}</p>{s.historical && s.river !== 'Ganga' ? <small>{s.river === 'Narmada' ? 'Narmada historical station' : 'CWC historical station'}<br/>{s.coordinate_source}</small> : s.historical ? <small>Historical station · <a href={s.coordinate_source} target="_blank" rel="noreferrer">CPCB coordinates</a><br/>Jan–Oct 2025: DO {s.values[3] ?? 'not reported'} · BOD {s.values[7] ?? 'not reported'} (mg/L)</small> : <small>{s.coordinate_status}<br/>{s.coordinate_source}</small>}<br/><button onClick={() => onSelect(String(s.id))}>Select station</button></Popup></CircleMarker>)}</MapContainer>{canShowImagery && <button type="button" className="in-map-layer-toggle" aria-pressed={!!showImagery} onClick={() => { setTileError(false); setSatellite(value => !value); }}>{showImagery ? 'Back to OpenStreetMap' : imageryLabel}</button>}{tileError && <div className="in-map-error" role="status">{showImagery ? 'Satellite imagery could not be loaded. Switch back to OpenStreetMap.' : 'OpenStreetMap tiles could not be loaded.'}</div>}{!stations.length && <div className="in-map-note"><MapPin size={14}/> Register a station to place its recorded coordinates on the map.</div>}</div>;
 }
 export function Timeline({ rows = [], metric = 'visual_stability_score' }) {
   if (!rows.some(r => Number.isFinite(r[metric]))) return <Empty>No comparable, non-reference observations are available for this trend.</Empty>;
