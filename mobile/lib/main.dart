@@ -44,12 +44,64 @@ class ApiFailure implements Exception {
   String toString() => message;
 }
 
+String syncError(Object error) {
+  if (error is ApiFailure) {
+    if (error.status == 401) return 'Sign-in required: ${error.message}';
+    if (error.status >= 500) {
+      return 'Server error (${error.status}). Pending captures are saved for retry.';
+    }
+    return error.message;
+  }
+  if (error is TimeoutException) {
+    return 'Request timed out at ${Uri.parse(base).authority}. Check the laptop connection and try again.';
+  }
+  if (error is SocketException || error is http.ClientException) {
+    return 'Cannot connect to ${Uri.parse(base).authority}. Check that the phone can reach the laptop over Wi-Fi.';
+  }
+  if (error is FileSystemException)
+    return 'The local capture file could not be read.';
+  return 'Sync could not finish. Pending captures are retained.';
+}
+
+String localTimestamp(Object? value, BuildContext context) {
+  final timestamp = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
+  if (timestamp == null) return 'Time unavailable';
+  final format = MaterialLocalizations.of(context);
+  return '${format.formatMediumDate(timestamp)} · ${format.formatTimeOfDay(TimeOfDay.fromDateTime(timestamp))}';
+}
+
+String analysisStatus(Object? value) => switch (value) {
+      'completed' => 'Completed',
+      'features_extracted' => 'Descriptors extracted · classifier unavailable',
+      'failed' => 'Analysis failed',
+      _ => 'Processing status unavailable',
+    };
+
+String stabilityLabel(Record row) {
+  final score = row['visual_stability_score'];
+  if (score is num)
+    return 'Visual stability: ${score.toStringAsFixed(1)} / 100';
+  return switch (row['stability_status']) {
+    'location_review_required' => 'Location review pending',
+    'context_mismatch' => 'Capture settings do not match the baseline',
+    'undefined_feature_scale' => 'Baseline cannot scale all descriptors',
+    'reference_sample' => 'Reference sample',
+    _ => 'Baseline Not Established',
+  };
+}
+
 class FieldApi {
   String token = '';
   Map<String, String> get headers => {'Authorization': 'Bearer $token'};
   Uri uri(String path) => Uri.parse(base + path);
   dynamic parse(http.Response response) {
-    final body = jsonDecode(response.body);
+    dynamic body;
+    try {
+      body = jsonDecode(response.body);
+    } on FormatException {
+      throw ApiFailure(response.statusCode >= 400 ? response.statusCode : 502,
+          'Unexpected response from ${uri('').authority}. Check the AquaLens API URL.');
+    }
     if (response.statusCode >= 400) {
       throw ApiFailure(
         response.statusCode,
@@ -216,7 +268,7 @@ class _FieldAppState extends State<FieldApp> {
       await loadLocal();
       unawaited(sync());
     } catch (e) {
-      message = e.toString();
+      message = syncError(e);
     } finally {
       if (mounted) setState(() => signingIn = false);
     }
@@ -267,8 +319,10 @@ class _FieldAppState extends State<FieldApp> {
             await update(row, 'Pending');
             rethrow;
           }
-          await update(row, e.status >= 500 ? 'Pending' : 'Failed', e.message);
-          if (e.status >= 500) rethrow;
+          final retryable =
+              e.status >= 500 || e.status == 408 || e.status == 429;
+          await update(row, retryable ? 'Pending' : 'Failed', e.message);
+          if (retryable) rethrow;
         } catch (e) {
           await update(row, 'Pending');
           rethrow;
@@ -287,10 +341,8 @@ class _FieldAppState extends State<FieldApp> {
       online = true;
       message = '';
     } catch (e) {
-      online = false;
-      message = e is ApiFailure
-          ? e.message
-          : 'Offline or server unreachable. Pending captures are retained.';
+      online = e is ApiFailure && e.status != 401;
+      message = syncError(e);
       if (e is ApiFailure && e.status == 401) {
         await storage.delete(key: 'token');
         api.token = '';
@@ -408,11 +460,12 @@ class _FieldAppState extends State<FieldApp> {
   String stationName(dynamic id) =>
       stations
           .where((s) => s['id'] == id)
-          .map((s) => [s['river'], s['name']].whereType<String>().where((part) => part.isNotEmpty).join(' · '))
+          .map((s) => [s['river'], s['name']]
+              .whereType<String>()
+              .where((part) => part.isNotEmpty)
+              .join(' · '))
           .firstOrNull ??
       'Station #$id';
-  String showTime(Object? time) =>
-      time?.toString().replaceFirst('T', ' ') ?? 'Unavailable';
 
   @override
   Widget build(BuildContext context) {
@@ -796,8 +849,11 @@ class _FieldAppState extends State<FieldApp> {
                     )
                   : const Icon(Icons.image_outlined),
               title: Text(stationName(row['station_id'])),
+              isThreeLine: true,
               subtitle: Text(
-                '${showTime(row['timestamp'])} · ${row['processing_status']}',
+                '${localTimestamp(row['timestamp'], context)}\n'
+                '${analysisStatus(row['processing_status'])} · ${(row['classification'] as Map?)?['predicted_condition'] ?? 'Appearance unavailable'}\n'
+                '${stabilityLabel(row)}',
               ),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(
@@ -918,7 +974,8 @@ class _CaptureReviewState extends State<CaptureReview> {
                   for (final r in widget.stations
                       .map((s) => s['river'] as String)
                       .toSet())
-                    DropdownMenuItem(value: r, child: Text(r.isEmpty ? 'No river' : r)),
+                    DropdownMenuItem(
+                        value: r, child: Text(r.isEmpty ? 'No river' : r)),
                 ],
                 onChanged: (v) {
                   if (v != null)
@@ -1037,7 +1094,7 @@ class ObservationDetail extends StatefulWidget {
 }
 
 class _ObservationDetailState extends State<ObservationDetail> {
-  late final Future<dynamic> analysis = widget.online
+  late Future<dynamic> analysis = widget.online
       ? widget.api.get('$origin/mine/${widget.row['id']}/analysis')
       : Future.value(null);
   @override
@@ -1045,7 +1102,13 @@ class _ObservationDetailState extends State<ObservationDetail> {
     final row = widget.row, gps = widget.row['ground'] as Map;
     final classifier = row['classification'] as Map?;
     return Scaffold(
-      appBar: AppBar(title: const Text('Observation results')),
+      appBar: AppBar(title: const Text('Observation results'), actions: [
+        IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh analysis',
+            onPressed: () => setState(() => analysis =
+                widget.api.get('$origin/mine/${row['id']}/analysis'))),
+      ]),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -1063,7 +1126,7 @@ class _ObservationDetailState extends State<ObservationDetail> {
                   const Text('Original image is unavailable.'),
             ),
           Text(
-            'Capture: ${row['timestamp']}\nUploaded: ${gps['uploaded_at']}\nGPS: ${gps['latitude']}, ${gps['longitude']}\nOfficer: ${gps['officer']}\nAnalysis: ${row['processing_status']}',
+            'Capture: ${localTimestamp(row['timestamp'], context)}\nUploaded: ${localTimestamp(gps['uploaded_at'], context)}\nGPS: ${gps['latitude']}, ${gps['longitude']}\nOfficer: ${gps['officer']}\nAnalysis: ${row['processing_status']}',
           ),
           Card(
             child: ListTile(
@@ -1077,8 +1140,15 @@ class _ObservationDetailState extends State<ObservationDetail> {
               ),
             ),
           ),
+          Card(
+              child: ListTile(
+            title: Text(stabilityLabel(row)),
+            subtitle: Text(row['visual_stability_score'] is num
+                ? 'Station baseline #${row['baseline_version']} · image similarity'
+                : 'Station-relative stability needs a matching eligible historical fingerprint.'),
+          )),
           const ListTile(
-            title: Text('Water Health Score: unavailable'),
+            title: Text('Laboratory Water Health Score'),
             subtitle: Text(
               'Visual appearance does not establish chemical quality or water safety.',
             ),
@@ -1092,6 +1162,8 @@ class _ObservationDetailState extends State<ObservationDetail> {
               FutureBuilder(
                 future: analysis,
                 builder: (context, snapshot) {
+                  if (snapshot.hasError)
+                    return Text(syncError(snapshot.error!));
                   final payload = snapshot.data as Map?;
                   final comparison = payload?['comparison'] as Map?;
                   final features = comparison?['features'] as List? ?? [];
@@ -1102,6 +1174,9 @@ class _ObservationDetailState extends State<ObservationDetail> {
                             ? 'Loading reference comparison…'
                             : 'Fingerprint: ${comparison?['status'] ?? 'Unavailable — needs connectivity, verified location and a matching station reference'}',
                       ),
+                      if (comparison?['visual_stability_score'] is num)
+                        Text(
+                            'Visual stability: ${comparison!['visual_stability_score']} / 100 · baseline #${(payload?['reference'] as Map?)?['id']}'),
                       for (final entry
                           in (row['features'] as Map? ?? {}).entries)
                         ListTile(

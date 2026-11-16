@@ -3,24 +3,30 @@ __pycache__/
 *.pyc
 .venv/
 
-# Environment
+# Environment variables and secrets
 .env
+.env.*
+/data/MOSDAC/config.json
 
-# Datasets
+# Google Earth Engine / OAuth credentials (never commit)
+*service-account*.json
+*credentials*.json
+client_secret*.json
+.config/earthengine/
+
+# Raw and processed datasets
 data/raw/
 data/processed/
+/data/*.csv
+/data/cpcb/
+/data/OPERA/
+/data/First Census of water bodies in India/
+/data/MOSDAC/downloads/
 
-# Large generated files
+# Large generated archives
 *.zip
 *.tar
 *.tar.gz
-
-# IDE
-.vscode/
-
-# OS
-.DS_Store
-Thumbs.db
 
 # Local account and session database
 backend/runtime/
@@ -29,23 +35,18 @@ backend/runtime/
 *.db
 backend/uploads/
 
+# Flutter generated files
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+
 # Frontend build output
-dist//data/OPERA/
+dist/
 
-# Raw datasets
-/data/First Census of water bodies in India/
-/data/MOSDAC/downloads/
+# IDE
+.vscode/
 
-# Python environment
-.venv/
-__pycache__/
-*.pyc
-
-# Local secrets
-/data/MOSDAC/config.json
-.env
-# Google Earth Engine / OAuth credentials (never commit)
-*service-account*.json
-*credentials*.json
-client_secret*.json
-.config/earthengine/
+# OS
+.DS_Store
+Thumbs.db

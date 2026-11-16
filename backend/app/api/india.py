@@ -3,7 +3,7 @@ import hashlib
 import json
 import math
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Optional
@@ -418,3 +418,44 @@ def build_earthdata_profile(latitude: float = Query(ge=7, le=38), longitude: flo
         raise HTTPException(503, 'Set a fresh NASA_EARTHDATA token in backend/.env.')
     except (OSError, ValueError, KeyError):
         raise HTTPException(502, 'Unable to retrieve NASA Earthdata scenes.')
+
+@router.get('/laboratory/water-health')
+def laboratory_water_health(river: str = '', station: str = '', state: str = '',
+                            start: date | None = None, end: date | None = None,
+                            db: Session = Depends(get_db)):
+    from ..laboratory_wqi import assessment, persist_assessment
+
+    if start and end and start > end:
+        raise HTTPException(422, 'Start date must precede the end date.')
+    result = assessment(river, station, start, end, state, db=db)
+    if (river or station) and (result['scored_stations'] or result['partial_scored_stations']):
+        persist_assessment(db, result, river=river, station=station, start=start, end=end, state=state)
+    return result
+
+
+class LaboratoryApproval(StrictInput):
+    report_reference: str = Field(min_length=4, max_length=500)
+    sample_id: str = Field(min_length=1, max_length=160)
+
+
+@router.post('/stations/{station_id}/evidence/laboratory/{record_id}/approval')
+def approve_laboratory_result(station_id: int, record_id: int, approval: LaboratoryApproval,
+                              reviewer=Depends(india_user), db: Session = Depends(get_db)):
+    from ..laboratory_wqi import approved_reading
+
+    row = db.get(IndiaRecord, record_id)
+    if not row or row.station_id != station_id or row.kind != 'laboratory':
+        raise HTTPException(404, 'Laboratory result not found at this station.')
+    payload = json.loads(row.payload)
+    if not approved_reading(payload):
+        raise HTTPException(422, 'Check the parameter name, measurement and unit against CPCB Class B objectives.')
+    if payload.get('wqi_approval'):
+        raise HTTPException(409, 'This result has already been reviewed.')
+    payload['wqi_approval'] = {
+        **approval.model_dump(),
+        'reviewed_by': reviewer.username,
+        'reviewed_at': datetime.now(timezone.utc).isoformat(),
+    }
+    row.payload = json.dumps(payload, ensure_ascii=False, allow_nan=False)
+    db.commit()
+    return unpack(row)

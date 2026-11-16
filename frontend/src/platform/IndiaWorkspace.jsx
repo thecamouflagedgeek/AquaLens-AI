@@ -1,3 +1,4 @@
+import LaboratoryHealth from './india/LaboratoryHealth';
 import GroundMonitoring from './india/GroundMonitoring';
 import ContextLab from './india/ContextLab';
 import RiverArchiveFindings from './india/GangaFindings';
@@ -41,6 +42,13 @@ export default function IndiaWorkspace() {
     }
     update({ station: id, observation: '' });
   };
+  const laboratoryCatalog = useQuery({
+    queryKey: ['india', 'laboratory-health', 'catalog'],
+    queryFn: ({ signal }) => get('/india/laboratory/water-health', undefined, signal),
+    enabled: mode !== 'ground',
+    staleTime: 60000,
+  });
+  const riverOptions = [...new Set([...rivers, ...(laboratoryCatalog.data?.available_rivers || [])])].sort();
   const stationsQuery = useQuery({ queryKey: ['india', 'stations'], queryFn: ({ signal }) => get('/india/stations', undefined, signal) });
   const stations = stationsQuery.data || [];
   const groundFeed = useQuery({queryKey:['india','ground'], enabled:mode!=='remote', queryFn:({signal})=>get('/india/ground/observations',undefined,signal), refetchInterval:10000});
@@ -81,18 +89,54 @@ export default function IndiaWorkspace() {
   const mapStations = [...filtered, ...mappedDatasetSites];
   const mapStation = station || mappedDatasetSites.find(site => site.id === stationId);
   const visibleDatasetSites = datasetStation ? [datasetStation] : datasetFiltered;
-  const states = [...new Set([...stations.filter(s => !river || s.river === river), ...datasetStations].map(s => s.state))].sort();
-  return <div className="india-app in-overview-layout in-gradient-workspace"><a className="in-skip" href="#india-main">Skip to monitoring content</a><div className="in-shell">
+  const states = [...new Set([...stations.filter(s => !river || s.river === river), ...datasetStations, ...(laboratoryCatalog.data?.stations || []).filter(s => !river || s.river === river)].map(s => s.state))].sort();
+  const remoteOverview = mode === 'remote' && view === 'overview';
+  const [showScoreDetails, setShowScoreDetails] = useState(false);
+  const healthParams = { river, state, start: start || undefined, end: end || undefined };
+  const healthQuery = useQuery({
+    queryKey: ['india', 'laboratory-health', healthParams],
+    enabled: remoteOverview && !dateError,
+    queryFn: ({ signal }) => get('/india/laboratory/water-health', healthParams, signal),
+  });
+  const health = healthQuery.data;
+  const laboratorySites = remoteOverview ? health?.stations || [] : [];
+  const archiveMapSites = laboratorySites.filter(site => Array.isArray(site.coordinates)).map(site => ({
+    ...site, latitude: site.coordinates[0], longitude: site.coordinates[1],
+    coordinate_source: site.agency + ' archive',
+  }));
+  const overviewMapSites = [...mapStations, ...archiveMapSites];
+  const overviewMapStation = mapStation || archiveMapSites.find(site => site.id === stationId);
+
+  const stationMatches = (health?.stations || []).filter(site =>
+    site.id === stationId || ((station || datasetStation) && site.name.toLowerCase() === (station || datasetStation).name.toLowerCase()
+      && site.state === (station || datasetStation).state));
+  const healthSite = stationMatches.length === 1 ? stationMatches[0] : null;
+  const fullScore = stationId ? healthSite?.assessment?.score : health?.score;
+  const partialScore = stationId ? healthSite?.partial_assessment?.score : health?.partial_score;
+  const score = fullScore ?? partialScore;
+  const scoreName = fullScore != null ? 'Full laboratory WQI' : partialScore != null ? 'Partial Laboratory Water Quality Index · pH + DO' : 'Laboratory index unavailable';
+  const labEvents = healthSite ? healthSite.observed_events : stationId ? null
+    : health?.stations.reduce((total, site) => total + site.observed_events, 0);
+  function openScoreDetails() {
+    setShowScoreDetails(true);
+    requestAnimationFrame(() => document.getElementById('remote-score-details')?.scrollIntoView({ block: 'start' }));
+  }
+  return <div className={`india-app in-overview-layout in-gradient-workspace ${remoteOverview ? "in-remote-overview" : ""}`}><a className="in-skip" href="#india-main">Skip to monitoring content</a><div className="in-shell">
     {view !== 'overview' && <WaterScene/>}
     <header className="in-topbar"><Link to="/" className="in-brand"><Waves size={29} strokeWidth={2.2}/><span>AquaLens<span className="in-brand-country">INDIA</span></span></Link><nav aria-label="Indian workspace">{tabs.map(([id, label, Icon]) => <button key={id} aria-label={label} title={label} aria-current={view === id ? 'page' : undefined} className={view === id ? 'is-active' : ''} onClick={() => update({ view: id })}><Icon size={14}/><span>{label}</span></button>)}</nav><div className="in-account"><span className="in-avatar" title={user.username}>A1</span><button aria-label="Logout" title="Logout" onClick={signOut} disabled={busy}><LogOut size={17}/></button></div></header>
-    <div className="in-welcome"><div><span className="in-kicker">WATER FINGERPRINTING · INDIAN RIVERS</span><h1>{view === 'overview' ? 'River monitoring overview' : tabs.find(([id]) => id === view)?.[1]}</h1><p>A clearer perspective on our rivers.<br/>Observe the sample. Understand the change.</p></div><div className="in-monitoring-modes" aria-label="Monitoring mode">{[["remote","Remote"],["ground","Ground"],["combined","Combined"]].map(([id,label])=><button type="button" key={id} aria-pressed={mode===id} onClick={()=>update({mode:id==="remote"?"":id})}>{label}</button>)}</div><div className="in-welcome-actions"><button className="in-button-outline" onClick={exportReport} disabled={!station || busy || !!dateError || analysisQuery.isError}><Download size={14}/>Export report</button><button className="in-button-white" onClick={() => setDialog(station ? 'sample' : 'station')}><Plus size={15}/>{station ? 'Record sample' : 'Register station'}</button></div></div>
+    <div className="in-welcome"><div><span className="in-kicker">WATER FINGERPRINTING · INDIAN RIVERS</span><h1>{view === 'overview' ? (remoteOverview ? 'Remote monitoring overview' : 'River monitoring overview') : tabs.find(([id]) => id === view)?.[1]}</h1><p>{remoteOverview ? <>Nationwide river insights from satellite and laboratory observations.<br/>Track water quality and environmental change.</> : <>A clearer perspective on our rivers.<br/>Observe the sample. Understand the change.</>}</p></div><div className="in-monitoring-modes" aria-label="Monitoring mode">{[["remote","Remote (Satellite)"],["ground","Ground (Smartphone)"],["combined","Combined"]].map(([id,label])=><button type="button" key={id} aria-pressed={mode===id} onClick={()=>update({mode:id==="remote"?"":id})}>{label}</button>)}</div><div className="in-welcome-actions"><button className="in-button-outline" onClick={exportReport} disabled={!station || busy || !!dateError || analysisQuery.isError}><Download size={14}/>Export report</button><button className="in-button-white" onClick={() => setDialog(station && !remoteOverview ? 'sample' : 'station')}><Plus size={15}/>{station && !remoteOverview ? 'Record sample' : 'Register station'}</button></div></div>
     <main id="india-main">
-      <section className="in-filters" aria-label="Monitoring filters">{view === "overview" ? <button type="button" className="in-filter-icon in-explore-toggle" aria-expanded={exploreOpen} aria-controls={showArchive ? undefined : "india-explore-cards"} onClick={() => { if (showArchive) setArchiveOpen(false); else setExploreOpen(open => !open); }}><SlidersHorizontal size={17} aria-hidden="true"/><span>Explore</span></button> : <div className="in-filter-icon"><SlidersHorizontal size={17}/><span>Explore</span></div>}{mode === 'ground' ? <><label>Field officer<select value={officer} onChange={e=>update({officer:e.target.value})}><option value="">All officers</option>{officers.map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label><label>Capture location<select value={location} onChange={e=>update({location:e.target.value})}><option value="">All locations</option>{stations.map(s=><option key={s.id} value={s.id}>{s.name} · {s.state} · {s.river}</option>)}</select></label></> : <><label>River<select value={river} onChange={e => update({ river: e.target.value, state: '', station: '', observation: '' })}><option value="">All rivers</option>{rivers.map(r => <option key={r}>{r}</option>)}</select></label><label>State<select value={state} onChange={e => update({ state: e.target.value, station: '', observation: '' })}><option value="">All states</option>{states.map(s => <option key={s}>{s}</option>)}</select></label><label>Station<select value={stationId} onChange={e => selectStation(e.target.value)}><option value="">Select a station</option>{filtered.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}{datasetFiltered.length > 0 && <optgroup label={river === "Ganga" ? "Ganga dataset · 2022–2025" : river === "Narmada" ? "Narmada historical dataset" : "CWC chemical monitoring archive"}>{datasetFiltered.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</optgroup>}</select></label></>}<label>From<input aria-label="Observation period from" type="date" value={start} max={end || undefined} onChange={e => update({ from: e.target.value, observation: '' })}/></label><label>To<input aria-label="Observation period to" type="date" value={end} min={start || undefined} onChange={e => update({ to: e.target.value, observation: '' })}/></label><div className="in-filter-actions"><button type="button" className="in-button-solid" onClick={search} disabled={!!dateError || stationsQuery.isFetching || analysisQuery.isFetching}><Search size={15} aria-hidden="true"/>{stationsQuery.isFetching || analysisQuery.isFetching ? 'Loading…' : 'Search'}</button><button className="in-circle-button" title="Register station" aria-label="Register station" onClick={() => setDialog('station')}><Plus size={18}/></button></div></section>
+      <section className="in-filters" aria-label="Monitoring filters">{view === "overview" ? <button type="button" className="in-filter-icon in-explore-toggle" aria-expanded={exploreOpen} aria-controls={showArchive ? undefined : "india-explore-cards"} onClick={() => { if (showArchive) setArchiveOpen(false); else setExploreOpen(open => !open); }}><SlidersHorizontal size={17} aria-hidden="true"/><span>Explore</span></button> : <div className="in-filter-icon"><SlidersHorizontal size={17}/><span>Explore</span></div>}{mode === 'ground' ? <><label>Field officer<select value={officer} onChange={e=>update({officer:e.target.value})}><option value="">All officers</option>{officers.map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></label><label>Capture location<select value={location} onChange={e=>update({location:e.target.value})}><option value="">All locations</option>{stations.map(s=><option key={s.id} value={s.id}>{s.name} · {s.state} · {s.river}</option>)}</select></label></> : <><label>River<select value={river} onChange={e => update({ river: e.target.value, state: '', station: '', observation: '' })}><option value="">All rivers</option>{riverOptions.map(r => <option key={r}>{r}</option>)}</select></label><label>State<select value={state} onChange={e => update({ state: e.target.value, station: '', observation: '' })}><option value="">All states</option>{states.map(s => <option key={s}>{s}</option>)}</select></label><label>Station<select value={stationId} onChange={e => selectStation(e.target.value)}><option value="">Select a station</option>{filtered.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}{datasetFiltered.length > 0 && <optgroup label={river === "Ganga" ? "Ganga dataset · 2022–2025" : river === "Narmada" ? "Narmada historical dataset" : "CWC chemical monitoring archive"}>{datasetFiltered.map(site => <option key={site.id} value={site.id}>{site.name}</option>)}</optgroup>}{laboratorySites.length > 0 && <optgroup label="Laboratory monitoring sites">
+        {laboratorySites.filter(site => !filtered.some(item => String(item.id) === site.id)).map(site => <option key={site.id} value={site.id}>{site.name}</option>)}
+      </optgroup>}</select></label></>}<label>From<input aria-label="Observation period from" type="date" value={start} max={end || undefined} onChange={e => update({ from: e.target.value, observation: '' })}/></label><label>To<input aria-label="Observation period to" type="date" value={end} min={start || undefined} onChange={e => update({ to: e.target.value, observation: '' })}/></label><div className="in-filter-actions"><button type="button" className="in-button-solid" onClick={search} disabled={!!dateError || stationsQuery.isFetching || analysisQuery.isFetching}><Search size={15} aria-hidden="true"/>{stationsQuery.isFetching || analysisQuery.isFetching ? 'Loading…' : 'Search'}</button><button className="in-circle-button" title="Register station" aria-label="Register station" onClick={() => setDialog('station')}><Plus size={18}/></button></div></section>
       {notice && <div className="in-notice" role="status">{notice}<button aria-label="Dismiss notification" onClick={() => setNotice('')}>×</button></div>}
       {dateError && <p className="in-error" role="alert">Choose an end date on or after the start date.</p>}
       {(stationsQuery.isError || analysisQuery.isError) && <p className="in-error" role="alert">{errorText(stationsQuery.error || analysisQuery.error)} <button onClick={() => { stationsQuery.refetch(); if (station) analysisQuery.refetch(); }}>Retry</button></p>}
       {(stationsQuery.isPending || (station && analysisQuery.isPending)) && <div className="in-loading" role="status">Loading recorded monitoring evidence…</div>}
-      {mode !== "ground" && stationId && !station && !datasetStation && stationsQuery.isSuccess && <p className="in-error">Selected station is not available in the current river and state filters.</p>}
+      {mode !== "ground" && stationId && !station && !datasetStation && !laboratorySites.some(site => site.id === stationId) && stationsQuery.isSuccess && <p className="in-error">Selected station is not available in the current river and state filters.</p>}
+      {mode === 'combined' && view === 'overview' && !dateError && <LaboratoryHealth key={JSON.stringify([river, state, stationId, start, end])}
+        river={river} state={state} stationId={stationId} stationName={station?.name || datasetStation?.name}
+        start={start} end={end}/>}
       {mode !== 'remote' && !dateError && <GroundMonitoring feed={groundFeed} officer={mode==="ground"?officer:""} stations={stations} river={mode==="ground"?"":river} state={mode==="ground"?"":state} stationId={mode==="ground"?location:stationId} start={start} end={end} view={view} onNavigate={v=>update({view:v})} onLab={station ? ()=>setDialog('laboratory') : undefined} onContext={station ? ()=>setDialog('context') : undefined}/>}
       {mode !== 'ground' && <>
       {view === 'overview' && !showArchive && <>
@@ -100,32 +144,41 @@ export default function IndiaWorkspace() {
           {[
             [MapPin, 'Monitoring stations', stationsQuery.isSuccess ? new Set([...filtered, ...datasetFiltered].map(s => s.id)).size : '—', 'Matches river and state filters'],
             [ScanLine, 'Satellite observations', '—', 'See the selected station’s Fingerprint'],
-            [CloudSun, 'Laboratory records', data?.laboratory?.filter(r => (!start || r.timestamp.slice(0,10) >= start) && (!end || r.timestamp.slice(0,10) <= end)).length ?? '—', 'Selected registered station and dates'],
-            [Activity, 'Water Health Score', '—', 'No validated assessment available'],
+            [CloudSun, 'Laboratory records', remoteOverview ? (labEvents ?? '—') : data?.laboratory?.filter(r => (!start || r.timestamp.slice(0,10) >= start) && (!end || r.timestamp.slice(0,10) <= end)).length ?? '—', 'Selected registered station and dates'],
+            ...(remoteOverview ? [[Activity, 'Water Health Score', score?.toFixed(1) ?? '—', scoreName]] : []),
             [Fingerprint, 'Visual screening flags', data?.timeline?.some(r => Number.isFinite(r.anomaly_score)) ? data.timeline.filter(r => r.status === 'potential_anomaly').length : '—', 'Selected station and reference'],
           ].map(([Icon, label, value, detail]) => <div className="in-overview-kpi" key={label}><span className="in-card-icon"><Icon size={21}/></span><div><strong>{value}</strong><div>{label}</div><small>{detail}</small></div></div>)}
         </div>
       </>}
       {view === 'overview' && <section className={`in-map-dashboard ${showArchive ? "in-archive-split" : "in-overview-board"}`} aria-label="Indian river monitoring overview">
-        <div className="in-map-dashboard-canvas"><StationMap key={showArchive ? "archive" : "overview"} showRivers mapSearch={mapSearch} stations={mapStations} selected={mapStation} onSelect={selectStation}/>{!showArchive && <aside className="in-map-dashboard-legend" aria-label="Map legend">
+        <div className="in-map-dashboard-canvas"><StationMap layerControls={remoteOverview && !showArchive} key={showArchive ? "archive" : "overview"} showRivers mapSearch={mapSearch} stations={overviewMapSites} selected={overviewMapStation} onSelect={selectStation}/>{!showArchive && <aside className="in-map-dashboard-legend" aria-label="Map legend">
           <strong>Map legend</strong>
           <span><i className="in-legend-river"/>Major rivers · Natural Earth</span>
           <span><i/>Registered station</span><span><i className="in-legend-historical"/>Historical dataset station</span>
           <span><i className="in-legend-selected"/>Selected station</span>
-          <small>{mapStations.length} {mapStations.length === 1 ? 'station' : 'stations'} in view</small>
+          <small>{overviewMapSites.length} {overviewMapSites.length === 1 ? 'station' : 'stations'} in view</small>
         </aside>}</div>
-        {!showArchive && <div className="in-overview-station"><Card title={mapStation?.name || datasetStation?.name || station?.name || 'Select a monitoring station'} hint={[river, (station || datasetStation)?.state].filter(Boolean).join(' · ') || 'Indian river monitoring'}>
-          <nav className="in-overview-links" aria-label="Station analysis"><span aria-current="page">Overview</span>{[['fingerprint','Fingerprint'],['findings','Findings'],['evidence','Context']].map(([id,label]) => <button key={id} type="button" onClick={() => update({view:id})}>{label}</button>)}</nav>
-          {current ? <SampleImage observation={current} label="Latest recorded sample"/> : <p>{datasetStation ? 'Historical measurements are available in Findings.' : 'Select a station from the map or station filter to inspect its evidence.'}</p>}
-          <div className="in-overview-score"><Activity size={22}/><div><strong>Water Health Score</strong><p>Not yet available</p></div></div>
+        {!showArchive && <div className="in-overview-station"><Card title={overviewMapStation?.name || datasetStation?.name || station?.name || 'Select a monitoring station'} hint={[river, (station || datasetStation)?.state].filter(Boolean).join(' · ') || 'Indian river monitoring'}>
+          <nav className="in-overview-links" aria-label="Station analysis"><span aria-current="page">Overview</span>{[['fingerprint',remoteOverview ? 'Trends' : 'Fingerprint'],['findings','Findings'],['evidence','Context']].map(([id,label]) => <button key={id} type="button" onClick={() => remoteOverview && id === 'fingerprint' ? openScoreDetails() : update({view:id})}>{label}</button>)}</nav>
+          {remoteOverview ? <div className="in-remote-score-row">
+            <div className="in-remote-scene">{current ? <SampleImage observation={current} label="Recorded sample"/>
+              : <><ScanLine size={26}/><span>Satellite preview unavailable</span></>}</div>
+            <div className="in-remote-gauge" style={{ '--score': Number.isFinite(score) ? `${score}%` : '0%' }}>
+              <div><strong>{score?.toFixed(1) ?? '—'}</strong><small>/ 100</small></div>
+            </div>
+            <div className="in-remote-score-copy"><strong>Water Health Score</strong><small>{scoreName}</small>{fullScore == null && partialScore != null && <small>2 of 4 objectives · BOD and total coliform excluded</small>}
+              <ViewButton onClick={openScoreDetails}>View detailed analysis</ViewButton>
+            </div>
+          </div> : current ? <SampleImage observation={current} label="Latest recorded sample"/> : <p>{datasetStation ? 'Historical measurements are available in Findings.' : 'Select a station from the map or station filter to inspect its evidence.'}</p>}
+          {remoteOverview && <h3 className="in-remote-parameter-heading">Key satellite-derived parameters</h3>}
           <div className="in-overview-parameters">
-            {(datasetStation?.values
+            {(!remoteOverview && datasetStation?.values
               ? [['DO', datasetStation.values[3], 'mg/L'], ['BOD', datasetStation.values[7], 'mg/L']]
               : [['CDOM', null], ['Turbidity', null], ['Chlorophyll-a', null], ['Surface area', null]]
             ).map(([label,value,unit]) => <div key={label}><small>{label}</small><strong>{value == null ? '—' : `${value} ${unit}`}</strong></div>)}
           </div>
-          <p className="in-fineprint">{datasetStation?.values ? 'Ganga archive · January–October 2025 (date filters do not change this summary).' : 'Satellite parameter values are not available in this overview.'}</p>
-          <ViewButton onClick={() => update({view:'findings'})}>View detailed analysis</ViewButton>
+          <p className="in-fineprint">{!remoteOverview && datasetStation?.values ? 'Ganga archive · January–October 2025 (date filters do not change this summary).' : 'Satellite parameter values are not available in this overview.'}</p>
+          {!remoteOverview && <ViewButton onClick={() => update({view:'findings'})}>View detailed analysis</ViewButton>}
         </Card></div>}
         {showArchive && <div className="in-archive-table"><ViewButton onClick={() => setArchiveOpen(false)}>Back to overview</ViewButton>{showGanga ? <><GangaDatasetTable sites={visibleDatasetSites}/><GangaArchive/></> : <CwcOverview dataset={chemicalDataset} sites={visibleDatasetSites} start={start} end={end} archive/>}</div>}
         {!showArchive && showGanga && <div className="in-map-dashboard-panels" id="india-explore-cards" hidden={!exploreOpen}>
@@ -180,6 +233,10 @@ export default function IndiaWorkspace() {
       {view === 'findings' && (!['Ganga', 'Mahanadi', 'Narmada'].includes(river) || station) && <FindingsDashboard sites={[...filtered, ...datasetFiltered]} site={datasetStation} station={station} archive={chemicalDataset} gangaSource={gangaDataset.source} data={data} start={start} end={end} onSelect={selectStation} onObservation={id => update({ observation: id })} exportReport={exportReport} busy={busy}>
 <><Card title="See what changed" hint="Current, previous and reference images from actual records"><div className="in-three-samples"><SampleImage observation={current} label="Current sample"/><SampleImage observation={data?.previous} label="Previous sample"/><SampleImage observation={data?.reference_observation} label="Reference sample"/></div></Card><div className="in-detail-grid"><Card title="Source-specific change detection" hint="Station-relative exploratory screening">{comparison ? <><Status value={comparison.status}/><Meta entries={{'Mean absolute IQR deviation': number(comparison.anomaly_score), 'Heuristic threshold': comparison.threshold, 'Comparable descriptors': `${comparison.comparable_features} / 20`, 'Repeated-screen flag': comparison.persistent_screening_flag ? '3 consecutive non-reference samples above threshold' : 'Not established'}}/><p>{comparison.is_reference_sample ? 'This image belongs to the reference. Its comparison is descriptive, not an independent anomaly test.' : 'Feature departures identify a change in appearance; contextual and laboratory evidence are needed to interpret it.'}</p><FeatureBars features={features}/></> : <Empty>Select a station observation to compare its visual fingerprint.</Empty>}</Card><Card title="Random Forest classification" hint="Existing model retained · Indian-domain validation not established">{current?.classification ? <><div className="in-classification">{current.classification.predicted_condition}</div><p>{current.classification.disclaimer}</p><Meta entries={{'Model version': current.classification.model_version, 'Probability interpretation': current.classification.probability_note}}/><h3>Global model feature importance</h3><p className="in-fineprint">These model-wide importances do not explain an individual prediction and are not anomaly contributions.</p><div className="in-importance">{Object.entries(current.classification.feature_importances || {}).sort((a, b) => b[1] - a[1]).slice(0, 7).map(([name, value]) => <div key={name}><span>{title(name)}</span><meter min="0" max="1" value={value}/><small>{number(value)}</small></div>)}</div></> : <Empty>{current?.processing_error || 'No RF classification is available for the selected sample.'}</Empty>}</Card></div><Card title="Evidence-based feature findings" hint="Numerical comparisons, without unsupported causal claims">{features.filter(f => f.deviation !== null).length ? features.filter(f => f.deviation !== null).sort((a, b) => Math.abs(b.normalized_deviation || 0) - Math.abs(a.normalized_deviation || 0)).slice(0, 5).map(f => <article className="in-finding" key={f.name}><Activity size={17}/><div><h3>{title(f.name)}</h3><p>Current {number(f.current)} compared with reference median {number(f.baseline?.median)}. Difference: {number(f.deviation)}; IQR-scaled deviation: {number(f.normalized_deviation)}.</p><small>Sample #{current.id} · Reference #{reference?.id} · {current.season} · {current.capture_protocol}</small></div></article>) : <Empty>No matching baseline comparisons are available.</Empty>}</Card></>
       </FindingsDashboard>}
+      {remoteOverview && showScoreDetails && !dateError && <section id="remote-score-details" className="in-remote-score-details" aria-label="Detailed laboratory analysis">
+        <LaboratoryHealth key={JSON.stringify([river, state, stationId, start, end])} river={river} state={state}
+          stationId={stationId} stationName={station?.name || datasetStation?.name} start={start} end={end}/>
+      </section>}
       {view === 'evidence' && <ContextLab station={station} site={datasetStation} archive={chemicalDataset} data={data} start={start} end={end} onLab={() => setDialog('laboratory')} onContext={() => setDialog('context')}/>}
       {data?.limitations && view !== 'overview' && <details className="in-limitations"><summary>Methodology & limitations</summary><p>{data.limitations}</p></details>}
         </div>
