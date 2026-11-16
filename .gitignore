@@ -1,26 +1,27 @@
+
 # Python
 __pycache__/
 *.pyc
 .venv/
 
-# Environment
+# Environment variables and secrets
 .env
+.env.*
+/data/MOSDAC/config.json
 
-# Datasets
+# Raw and processed datasets
 data/raw/
 data/processed/
+/data/*.csv
+/data/cpcb/
+/data/OPERA/
+/data/First Census of water bodies in India/
+/data/MOSDAC/downloads/
 
-# Large generated files
+# Large generated archives
 *.zip
 *.tar
 *.tar.gz
-
-# IDE
-.vscode/
-
-# OS
-.DS_Store
-Thumbs.db
 
 # Local account and session database
 backend/runtime/
@@ -29,22 +30,18 @@ backend/runtime/
 *.db
 backend/uploads/
 
-# Frontend build output
-dist//data/OPERA/
-
-# Raw datasets
-/data/First Census of water bodies in India/
-/data/MOSDAC/downloads/
-
-# Python environment
-.venv/
-__pycache__/
-*.pyc
-
-# Local secrets
-/data/MOSDAC/config.json
-.env
-
-#build
-mobile/build/
+# Flutter generated files
 mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+
+# Frontend build output
+dist/
+
+# IDE
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

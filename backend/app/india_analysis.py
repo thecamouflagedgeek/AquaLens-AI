@@ -1,8 +1,41 @@
 """Transparent exploratory fingerprint comparisons, never a chemical safety test."""
+import json
+from functools import lru_cache
+from pathlib import Path
+
 import numpy as np
 from .ml.feature_schema import FEATURE_NAMES
 
 MIN_REFERENCE = 5
+
+
+@lru_cache(maxsize=1)
+def uieb_reference():
+    return json.loads(Path(__file__).with_name('uieb_reference.json').read_text(encoding='utf-8'))
+
+
+def compare_uieb(observation):
+    reference = uieb_reference()
+    if observation.get('feature_extractor_version') != reference['feature_extractor_version']:
+        return None
+    features = observation.get('features') or {}
+    if any(name not in features or not np.isfinite(features[name]) for name in FEATURE_NAMES):
+        return None
+    deviations = []
+    for name in FEATURE_NAMES:
+        stats = reference['stats'][name]
+        if stats['iqr'] > 1e-9:
+            deviations.append({'name': name, 'normalized_deviation': (features[name] - stats['median']) / stats['iqr']})
+    if not deviations:
+        return None
+    return {
+        'score': round(100 * float(np.exp(-0.35 * np.mean([abs(item['normalized_deviation']) for item in deviations]))), 1),
+        'sample_count': reference['sample_count'],
+        'comparable_features': len(deviations),
+        'features': deviations,
+    }
+
+
 THRESHOLD = 2.5
 LIMITATIONS = (
     'Exploratory visual monitoring only; no Indian-domain performance validation is claimed. '

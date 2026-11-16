@@ -1,3 +1,5 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { api, message } from '../api';
 import { useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Bar, BarChart, Brush, CartesianGrid, Line, LineChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from 'recharts';
@@ -119,6 +121,31 @@ function Correlation({ rows }) {
   </Card>;
 }
 
+function LaboratoryReview({ station, record }) {
+  const cache = useQueryClient();
+  const review = useMutation({
+    mutationFn: payload => api.post(
+      `/india/stations/${station.id}/evidence/laboratory/${record.id}/approval`, payload,
+    ),
+    onSuccess: () => cache.invalidateQueries({ queryKey: ['india'] }),
+  });
+  const approval = record.wqi_approval || review.data?.data?.wqi_approval;
+  if (approval) return <p>Approved · {approval.report_reference} · Sample {approval.sample_id}</p>;
+  return <details>
+    <summary>Review for Water Health Score</summary>
+    <form onSubmit={event => {
+      event.preventDefault();
+      review.mutate(Object.fromEntries(new FormData(event.currentTarget)));
+    }}>
+      <p>Check the original report for this station, sampling time, value, and unit before approving.</p>
+      <label>Laboratory report reference <input name="report_reference" required minLength={4} maxLength={500}/></label>
+      <label>Sample ID exactly as on report <input name="sample_id" required maxLength={160}/></label>
+      <button type="submit" disabled={review.isPending}>Approve laboratory record</button>
+      {review.isError && <p role="alert">{message(review.error)}</p>}
+    </form>
+  </details>;
+}
+
 export default function ContextLab({ data, station, site, archive, start, end, onLab, onContext }) {
   const [tab,setTab]=useState('overview');
   const [search,setSearch]=useState(''); const [lab,setLab]=useState(''); const [context,setContext]=useState(''); const [month,setMonth]=useState(null);
@@ -199,7 +226,7 @@ export default function ContextLab({ data, station, site, archive, start, end, o
     {tab !== "overview" && <Card title="Where did these readings come from?" hint="Reported units and dates are preserved; archive measurements are labeled separately">
       <div className="in-lab-controls"><label>Search records <input value={search} onChange={e=>setSearch(e.target.value)}/></label><button type="button" onClick={download} className="in-button-outline" disabled={!visible.length}>Download CSV</button><button type="button" onClick={()=>window.print()} className="in-button-outline">Print / save PDF</button><button type="button" disabled={!station} onClick={onLab} className="in-button-outline">Add laboratory result</button><button type="button" disabled={!station} onClick={onContext} className="in-button-outline">Add context record</button></div>
       <p>{location?.name}{Number.isFinite(location?.latitude)&&Number.isFinite(location?.longitude) && ` · ${location.latitude}, ${location.longitude}`}</p><p>{visible.length} matching records{month!==null?' · '+months[month].name:''}.</p>
-      {visible.length ? <div className="in-table-wrap"><table><thead><tr>{['Reported period','Category','Parameter','Value','Unit','Source','Pairing / notes'].map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{visible.map(r=><tr key={r.kind+':'+r.id}><td>{r.timestamp==='2025'?'2025 (Jan–Oct)':r.timestamp}</td><td>{r.kind}</td><th scope="row">{r.kind!=="Context"?<button type="button" className="in-text-button" onClick={()=>{setLab(label(r));setTab("lab");}}>{r.parameter}</button>:r.parameter}</th><td>{r.value}</td><td>{r.unit||'—'}</td><td>{r.provenance||'Not recorded'}</td><td>{[r.observation_id?'Sample #'+r.observation_id:null,r.notes].filter(Boolean).join(' · ')||'—'}</td></tr>)}</tbody></table></div> : <Empty>No evidence records match the current selection.</Empty>}
+      {visible.length ? <div className="in-table-wrap"><table><thead><tr>{['Reported period','Category','Parameter','Value','Unit','Source','Pairing / notes'].map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{visible.map(r=><tr key={r.kind+':'+r.id}><td>{r.timestamp==='2025'?'2025 (Jan–Oct)':r.timestamp}</td><td>{r.kind}</td><th scope="row">{r.kind!=="Context"?<button type="button" className="in-text-button" onClick={()=>{setLab(label(r));setTab("lab");}}>{r.parameter}</button>:r.parameter}</th><td>{r.value}</td><td>{r.unit||'—'}</td><td>{r.provenance||'Not recorded'}{station && onLab && r.kind === 'Laboratory' && Number.isInteger(r.id) && <LaboratoryReview station={station} record={r}/>}</td><td>{[r.observation_id?'Sample #'+r.observation_id:null,r.notes].filter(Boolean).join(' · ')||'—'}</td></tr>)}</tbody></table></div> : <Empty>No evidence records match the current selection.</Empty>}
     </Card>}
   </motion.div>;
 }

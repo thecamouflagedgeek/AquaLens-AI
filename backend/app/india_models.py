@@ -29,3 +29,10 @@ class IndiaRecord(Base):
     kind = Column(String(24), nullable=False, index=True)
     payload = Column(Text, nullable=False)
     created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+class IndiaLaboratoryAssessment(Base):
+    __tablename__ = 'india_laboratory_assessments'
+    fingerprint = Column(String(64), primary_key=True)
+    payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
