@@ -21,6 +21,7 @@ from backend.app.db.models import User
 from backend.app.india_models import IndiaObservation, IndiaRecord
 from backend.app.india_analysis import build_reference, compare
 from backend.app.ml.feature_schema import FEATURE_NAMES
+from backend.app.water_validation import result
 
 
 class IndiaWorkspaceTests(unittest.TestCase):
@@ -64,6 +65,20 @@ class IndiaWorkspaceTests(unittest.TestCase):
         self.assertIsNone(compare({**sample, 'season': 'Monsoon'}, reference)['anomaly_score'])
         self.assertIsNone(compare({**sample, 'camera_settings': 'changed'}, reference)['anomaly_score'])
         self.assertEqual(compare(india.observations(self.db, self.station['id'])[-1], reference)['status'], 'reference_sample')
+
+    def test_blocked_field_photo_is_kept_for_review_without_affecting_analysis(self):
+        reference = self.baseline()
+        rejected = self.sample(6, ground={'location_status': 'admin_verified'},
+                               water_validation=result('NO_WATER_DETECTED', 'Empty container', 2.5))
+        valid = self.sample(7, ground={'location_status': 'admin_verified'},
+                            water_validation=result('VALID_WATER_SOURCE', 'Visible water', 90))
+        analysis = india.station_analysis(self.station['id'], observation_id=valid['id'], db=self.db)
+        blocked = next(o for o in analysis['observations'] if o['id'] == rejected['id'])
+        self.assertEqual(blocked['water_validation']['status'], 'NO_WATER_DETECTED')
+        self.assertEqual(blocked['features'], {})
+        self.assertIsNone(compare(blocked, reference)['visual_stability_score'])
+        self.assertNotIn(blocked['id'], [point['id'] for point in analysis['timeline']])
+        self.assertEqual(analysis['previous']['id'], reference['observation_ids'][-1])
 
     def test_missing_and_zero_spread_data_are_not_zero_scores(self):
         samples = [self.sample(i, features={f: 1.0 for f in FEATURE_NAMES}) for i in range(1, 6)]

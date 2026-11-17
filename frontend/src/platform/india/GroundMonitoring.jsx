@@ -8,19 +8,30 @@ import ContextLab from './ContextLab';
 import './ground.css';
 
 const recorded = value => typeof value === 'string' && value.trim() && !/not recorded/i.test(value);
+const validationGroup = row => {
+  const status = row.water_validation?.status;
+  if (status === 'VALID_WATER_SOURCE') return 'valid';
+  return status === 'NO_WATER_DETECTED' || status === 'INSUFFICIENT_VISIBILITY' ? 'invalid' : 'review';
+};
 const compatible = (a,b) => a && b && a.station_id===b.station_id && a.ground.location_status==='admin_verified' && b.ground.location_status==='admin_verified' && a.feature_extractor_version && a.feature_extractor_version===b.feature_extractor_version && ['capture_protocol','camera','camera_settings','illumination','preparation'].every(k=>recorded(a[k])&&a[k]===b[k]);
 
 export default function GroundMonitoring({ feed, officer, stations, river, state, stationId, start, end, view, onNavigate, onLab, onContext }) {
   const [selected,setSelected]=useState(null), [second,setSecond]=useState(''), [wipe,setWipe]=useState(50);
   const [descriptor, setDescriptor] = useState('');
+  const [validationFilter, setValidationFilter] = useState('');
   const stationFor=o=>stations.find(s=>String(s.id)===String(o.station_id));
   const day=o=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(o.timestamp));
   const scope=(feed.data||[]).filter(o=>{const s=stationFor(o);const d=day(o);return s&&(!river||s.river===river)&&(!state||s.state===state)&&(!stationId||String(s.id)===stationId)&&(!start||d>=start)&&(!end||d<=end);});
-  const rows=scope.filter(o=>!officer||String(o.ground.officer_id)===officer).sort((a,b)=>Date.parse(b.timestamp)-Date.parse(a.timestamp));
+  const officerRows=scope.filter(o=>!officer||String(o.ground.officer_id)===officer).sort((a,b)=>Date.parse(b.timestamp)-Date.parse(a.timestamp));
+  const rows=['findings','samples'].includes(view) && validationFilter
+    ? officerRows.filter(row => validationGroup(row) === validationFilter) : officerRows;
   const current=rows.find(o=>o.id===selected)||rows[0], other=rows.find(o=>String(o.id)===second&&o.id!==current?.id);
   const station=current?stationFor(current):stations.find(s=>String(s.id)===stationId);
-  const evidence=useQuery({queryKey:['india','ground-detail',current?.id,'descriptor-deviations'],enabled:!!current,queryFn:({signal})=>get('/india/ground/observations/'+current.id+'/analysis',{ schema: 'descriptor-deviations' },signal)});
+  const evidence=useQuery({queryKey:['india','ground-detail',current?.id,'descriptor-deviations'],enabled:!!current,refetchInterval:10000,queryFn:({signal})=>get('/india/ground/observations/'+current.id+'/analysis',{ schema: 'descriptor-deviations' },signal)});
   const review=useMutation({mutationFn:id=>api.post('/india/ground/observations/'+id+'/verify-location'),onSuccess:()=>{feed.refetch();evidence.refetch();}});
+  const validate=useMutation({mutationFn:id=>api.post('/india/ground/observations/'+id+'/validate-water'),onSuccess:()=>{feed.refetch();evidence.refetch();}});
+  const valid = current && validationGroup(current) === 'valid';
+  const validation = current?.water_validation;
   const classification = current?.classification;
   const votes = Object.entries(classification?.raw_probabilities || {})
     .filter(([, probability]) => Number.isFinite(probability))
@@ -29,22 +40,20 @@ export default function GroundMonitoring({ feed, officer, stations, river, state
   const comparison=current?.ground.location_status==='admin_verified'?evidence.data?.comparison:null;
   const explanation = useQuery({
     queryKey: ['india', 'ground-explanation', current?.id, current?.ground.location_status, evidence.data?.reference?.id],
-    enabled: view === 'findings' && !!current && evidence.isSuccess,
+    enabled: view === 'findings' && !!valid && evidence.isSuccess,
     queryFn: async ({ signal }) => (await api.post(
       `/india/ground/observations/${current.id}/explanation`, undefined, { signal },
     )).data.explanation,
     staleTime: 5 * 60 * 1000,
     retry: false,
   });
-  const nearbyReference = evidence.data?.nearby_reference;
-  const usingUieb = !Number.isFinite(comparison?.visual_stability_score) && !nearbyReference && !!evidence.data?.uieb_comparison;
-  const stabilityScore = usingUieb ? evidence.data.uieb_comparison.score : (comparison?.visual_stability_score ?? nearbyReference?.score);
-  const stabilitySource = usingUieb
-    ? `UIEB benchmark · ${evidence.data.uieb_comparison.sample_count} underwater images`
-    : nearbyReference
-      ? `Cross-station comparison · ${nearbyReference.station_name} · ${nearbyReference.distance_m.toLocaleString()} m away`
-      : 'Exploratory station comparison';
-  const activeReference = usingUieb ? evidence.data.uieb_comparison : nearbyReference || comparison;
+  const benchmark = evidence.data?.uieb_comparison ?? current?.uieb_comparison;
+  const benchmarkConfirmed = current?.benchmark_water_confirmed === true;
+  const usingUieb = (valid || benchmarkConfirmed) && !Number.isFinite(comparison?.visual_stability_score) && Number.isFinite(benchmark?.score);
+  const stabilityScore = usingUieb ? benchmark.score : valid ? comparison?.visual_stability_score : null;
+  const scoreTitle = usingUieb ? 'Benchmark Similarity Score' : 'Visual Stability Score';
+  const stabilitySource = usingUieb ? 'UIEB underwater benchmark' : 'Station fingerprint';
+  const activeReference = usingUieb ? benchmark : comparison;
   const nearestStation = evidence.data?.nearest_station ?? (current && stations.reduce((closest, site) => {
     const { latitude, longitude } = current.ground;
     if (![latitude, longitude, site.latitude, site.longitude].every(Number.isFinite)) return closest;
@@ -58,8 +67,10 @@ export default function GroundMonitoring({ feed, officer, stations, river, state
   const deviations = (activeReference?.features || [])
     .filter(feature => Number.isFinite(feature.normalized_deviation))
     .map(feature => ({ name: title(feature.name), deviation: feature.normalized_deviation }));
-  const stabilityReason = current?.ground.location_status !== 'admin_verified'
-    ? 'Verify the capture location first.'
+  const stabilityReason = !valid ? 'Water validation is required before stability can be calculated.'
+    : !Object.keys(current?.features || {}).length ? 'Image features are unavailable.'
+    : current?.ground.location_status !== 'admin_verified'
+    ? 'Verify the capture location to compare against its station. No usable benchmark comparison is available.'
     : evidence.isError ? 'Reference analysis could not be loaded.'
     : evidence.isPending ? 'Loading reference analysis.'
     : ({
@@ -76,20 +87,54 @@ export default function GroundMonitoring({ feed, officer, stations, river, state
       {rows.map(row => <option key={row.id} value={row.id}>{sampleLabel(row)}</option>)}
     </select>
   </label>;
-  const score = Number.isFinite(stabilityScore) ? `${stabilityScore.toFixed(1)} / 100` : 'Unavailable';
+  const score = Number.isFinite(stabilityScore) ? `${stabilityScore.toFixed(1)} / 100` : 'N/A';
+  const majorDeviations = [...deviations].sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation)).slice(0, 4);
+  const validationControl = <label className="in-ground-control">Water validation
+    <select value={validationFilter} onChange={event => setValidationFilter(event.target.value)}>
+      <option value="">All captures ({officerRows.length})</option>
+      {Object.entries({valid: 'Valid', invalid: 'Invalid', review: 'Pending review'}).map(([value, label]) =>
+        <option key={value} value={value}>{label} ({officerRows.filter(row => validationGroup(row) === value).length})</option>)}
+    </select>
+  </label>;
+  const validationDetails = current && <>
+    <p><strong>{title(validation?.status?.toLowerCase() || 'review_required')}</strong></p>
+    <p>Water Visibility Score {valid && Number.isInteger(validation?.visibility_score) &&
+      validation.visibility_score >= 1 && validation.visibility_score <= 5 ? `${validation.visibility_score} / 5` : 'N/A'}</p>
+    <p>{validation?.reason}</p>
+    {benchmarkConfirmed && <p>Water presence confirmed by the operator for benchmark comparison.</p>}
+    {!valid && !benchmarkConfirmed && <p>Visual Stability Score N/A</p>}
+    {(validationGroup(current) === 'review' || validation?.method !== 'clip-water-screening-v2') && <button className="in-button-outline" type="button"
+      disabled={validate.isPending} onClick={() => validate.mutate(current.id)}>Run water validation</button>}
+    {validate.isError && validate.variables === current.id && <p role="alert">{message(validate.error)}</p>}
+  </>;
 
   if (view === 'findings') return <section className="in-ground in-ground-workspace" aria-label="Ground findings">
     <div className="in-ground-heading"><div><h2>Findings</h2><p>Interpret the model output for a field observation.</p></div>{observationPicker}</div>
+    {validationControl}
     {current ? <>
+      <Card title="Water source validation" hint={sampleLabel(current)}>
+        <SampleImage observation={current} label="Original field capture"/>
+        <p>Field officer {current.ground.officer}</p>
+        {validationDetails}
+      </Card>
+      {(valid || benchmarkConfirmed) && <>
       <div className="in-ground-findings">
         <Card title="Visual classification" hint={classification?.model_version}>
           <strong className="in-ground-value">{classification?.predicted_condition || 'Unavailable'}</strong>
           {current.processing_error && <p>{current.processing_error}</p>}
           {classification?.disclaimer && <p>{classification.disclaimer}</p>}
         </Card>
-        <Card title="Visual Stability Score" hint={stabilitySource}>
-          <strong className="in-ground-value">{score}</strong>
-          {!Number.isFinite(stabilityScore) && <p>{stabilityReason}</p>}
+        <Card title={scoreTitle} hint={stabilitySource}>
+          <div className="in-stability-gauge">
+            <div className="in-stability-dial" style={{ '--stability-sweep': Number.isFinite(stabilityScore) ? stabilityScore * 1.8 + 'deg' : '0deg' }}>
+              <strong>{score}</strong>
+            </div>
+          </div>
+          {Number.isFinite(stabilityScore) ? <>
+            <p>Equal-weight similarity from absolute deviations from reference medians, scaled by each feature's interquartile range.</p>
+            {usingUieb && <p>Compared with {benchmark.sample_count} UIEB underwater reference images.</p>}
+            <p>Largest deviations (IQR units): {majorDeviations.map(({name, deviation}) => name + ' ' + deviation.toFixed(2)).join(', ')}</p>
+          </> : <p>{stabilityReason}</p>}
           <button className="in-button-outline" type="button" onClick={() => onNavigate('fingerprint')}>Inspect station reference</button>
         </Card>
       </div>
@@ -125,11 +170,12 @@ export default function GroundMonitoring({ feed, officer, stations, river, state
             <p>{classification?.predicted_condition
               ? `The model classified this capture as ${classification.predicted_condition}. The chart shows raw tree votes.`
               : 'A visual classification is unavailable for this capture.'}</p>
-            <p>{Number.isFinite(stabilityScore) ? `Visual stability: ${score} · ${stabilitySource}.` : stabilityReason}</p>
+            <p>{Number.isFinite(stabilityScore) ? `${scoreTitle}: ${score} · ${stabilitySource}.` : stabilityReason}</p>
             {(explanation.isFetching || evidence.isPending) && <p role="status">Preparing a detailed explanation…</p>}
           </>}
         </Card>
       </div>
+      </>}
     </> : <Empty>{empty}</Empty>}
   </section>;
 
@@ -144,15 +190,18 @@ export default function GroundMonitoring({ feed, officer, stations, river, state
 
   if (view === 'samples') return <section className="in-ground in-ground-workspace" aria-label="Ground samples">
     <div className="in-ground-heading"><div><h2>Samples</h2><p>Browse original field photographs and compare captures.</p></div></div>
+    {validationControl}
     {current ? <div className="in-ground-samples">
       <Card title="Capture library" hint={`${rows.length} matching observations`}>
         <div className="in-ground-gallery">{rows.map(row => <button key={row.id} type="button"
           aria-pressed={row.id === current.id} onClick={() => setSelected(row.id)}>
           <SampleImage observation={row} label={stationFor(row)?.name || 'Field capture'}/>
+          <span>{title(row.water_validation?.status?.toLowerCase() || 'review_required')}</span>
           <span>#{row.id} · {row.ground.officer}</span>
         </button>)}</div>
       </Card>
       <Card title={sampleLabel(current)} hint={`${current.ground.officer} · ${title(current.ground.location_status)}`}>
+        {validationDetails}
         <label className="in-ground-control">Compare with
           <select value={other?.id || ''} onChange={event => setSecond(event.target.value)}>
             <option value="">Choose another capture</option>
@@ -227,16 +276,15 @@ export default function GroundMonitoring({ feed, officer, stations, river, state
           <dd>{nearestStation ? `${nearestStation.name} · ${Math.round(nearestStation.distance_m)} m from capture` : 'Unavailable'}</dd>
           <dt>Location review</dt><dd>{title(current.ground.location_status)}</dd>
           <dt>Screening status</dt><dd>{comparison ? title(comparison.status) : 'Unavailable'}</dd>
-          <dt>Reference images</dt><dd>{(usingUieb ? activeReference.sample_count : nearbyReference?.sample_count ?? evidence.data?.reference?.sample_count) ?? 'No compatible station reference'}</dd>
+          <dt>Reference images</dt><dd>{(usingUieb ? activeReference.sample_count : evidence.data?.reference?.sample_count) ?? 'No compatible station reference'}</dd>
           <dt>Comparable descriptors</dt><dd>{activeReference?.comparable_features ?? 'Awaiting reference'}</dd>
         </dl>
         <div className="in-stability-gauge">
-          <h3>Visual Stability Score</h3>
+          <h3>{scoreTitle}</h3>
           <div className="in-stability-dial" aria-hidden="true"
             style={{ '--stability-sweep': Number.isFinite(stabilityScore) ? `${stabilityScore * 1.8}deg` : '0deg' }}>
             <strong>{score}</strong>
           </div>
-          {nearbyReference && <p>This comparison uses a nearby station’s visual reference.</p>}
           {usingUieb && <p>Image similarity to an underwater benchmark. Lighting, framing and the sample container can influence the score.</p>}
           <div className="in-stability-scale" aria-hidden="true"><span>0</span><span>100</span></div>
           <p>{Number.isFinite(stabilityScore) ? `${score} · ${stabilitySource}` : stabilityReason}</p>
@@ -291,7 +339,7 @@ export default function GroundMonitoring({ feed, officer, stations, river, state
         <dt>Model classification</dt><dd>{classification?.predicted_condition || 'Unavailable'}</dd>
         <dt>Visual descriptors extracted</dt><dd>{featureCount}</dd>
         <dt>Water Health Score</dt><dd>Unavailable without a validated health assessment.</dd>
-        <dt>Visual Stability Score</dt><dd>{Number.isFinite(stabilityScore)
+        <dt>{scoreTitle}</dt><dd>{Number.isFinite(stabilityScore)
           ? `${stabilityScore.toFixed(1)} / 100 · ${stabilitySource}`
           : stabilityReason}</dd>
       </dl>{current.processing_error && <p role="status">{current.processing_error}</p>}<button type="button" className="in-button-solid" onClick={()=>onNavigate(view==='findings'?'samples':'findings')}>{view==='findings'?'Compare historical samples':'Know more'}</button></>:<Empty>Select a field observation.</Empty>}</Card>

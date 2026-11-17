@@ -17,7 +17,9 @@ from sqlalchemy.orm import Session
 from ..core.config import settings
 from ..db.session import get_db
 from ..india_models import IndiaStation, IndiaObservation, IndiaRecord
-from ..india_analysis import build_reference, compare, LIMITATIONS, MIN_REFERENCE
+from ..india_analysis import build_reference, compare, compare_uieb, LIMITATIONS, MIN_REFERENCE
+from ..water_validation import eligible_image, pending, validate_water
+from starlette.concurrency import run_in_threadpool
 from ..ml.feature_extractor import reconstruct_20_features
 from ..ml.inference import get_inference_engine
 from .deps import get_current_user
@@ -132,7 +134,27 @@ class ActionUpdate(StrictInput):
 
 
 def unpack(record):
-    return {**json.loads(record.payload), 'id': record.id}
+    payload = {**json.loads(record.payload), 'id': record.id}
+    if not eligible_image(payload):
+        payload.update(features={}, classification=None, eligible=False,
+                       feature_extractor_version=None, processing_error=None,
+                       processing_status='validation_hold')
+        payload.setdefault('water_validation', pending())
+    return payload
+
+
+def visual_analysis(decoded):
+    features = reconstruct_20_features(decoded)
+    if not all(math.isfinite(float(v)) for v in features.values()):
+        raise HTTPException(422, 'Extracted features contain invalid numeric values.')
+    classification, processing_error = None, None
+    try:
+        classification = get_inference_engine().classify_dict(features)
+    except Exception:
+        processing_error = 'RF classification unavailable. The original image and extracted features are retained.'
+    return dict(features=features, classification=classification, processing_error=processing_error,
+                processing_status='features_extracted' if processing_error else 'completed',
+                feature_extractor_version='opencv-20feat-v1.0.0')
 
 
 def require_station(db, station_id):
@@ -200,24 +222,21 @@ async def store_observation(station_id, metadata, image, db, ground=None):
             'image/webp' if contents.startswith(b'RIFF') and contents[8:12] == b'WEBP' else None)
     if mime is None:
         raise HTTPException(422, 'Use a PNG, JPEG or WebP image.')
-    features = reconstruct_20_features(decoded)
-    if not all(math.isfinite(float(v)) for v in features.values()):
-        raise HTTPException(422, 'Extracted features contain invalid numeric values.')
-    classification, processing_error = None, None
-    try:
-        classification = get_inference_engine().classify_dict(features)
-    except Exception:
-        processing_error = 'RF classification unavailable. The original image and extracted features are retained.'
+    validation = await run_in_threadpool(validate_water, decoded) if ground is not None else None
     filename = uuid.uuid4().hex + '.image'
     FILES.mkdir(parents=True, exist_ok=True)
     path = FILES / filename
-    path.write_bytes(contents)
     payload = {**meta.model_dump(mode='json'), 'timestamp': meta.timestamp.astimezone(timezone.utc).isoformat(),
-               'features': features, 'classification': classification, 'processing_error': processing_error,
-               'processing_status': 'features_extracted' if processing_error else 'completed', 'checksum': checksum,
-               'feature_extractor_version': 'opencv-20feat-v1.0.0', 'media_type': mime}
+               'checksum': checksum, 'media_type': mime}
     if ground is not None:
-        payload['ground'] = ground
+        payload.update(ground=ground, water_validation=validation)
+    if eligible_image(payload):
+        payload.update(await run_in_threadpool(visual_analysis, decoded))
+    else:
+        payload.update(features={}, classification=None, eligible=False, processing_status='validation_hold')
+    if ground is not None:
+        payload['uieb_comparison'] = compare_uieb(payload)
+    path.write_bytes(contents)
     row = IndiaObservation(station_id=station_id, checksum=checksum, filename=filename, payload=json.dumps(payload, allow_nan=False))
     try:
         db.add(row)
@@ -311,12 +330,14 @@ def station_analysis(station_id: int, observation_id: Optional[int] = None,
     current = next((o for o in samples if o['id'] == observation_id), None) if observation_id else (samples[0] if samples else None)
     if observation_id and current is None:
         raise HTTPException(404, 'Selected observation is not available in this station and period.')
-    baselines = records(db, station_id, 'baseline')
+    baselines = eligible_baselines(db, station_id, all_samples)
     reference = next((b for b in baselines if current and b['season'] == current['season'] and b['capture_protocol'] == current['capture_protocol']), None)
-    previous = samples[samples.index(current) + 1] if current and samples.index(current) + 1 < len(samples) else None
+    previous = next((sample for sample in samples[samples.index(current) + 1:] if eligible_image(sample)), None) if current else None
     comparison = compare(current, reference, previous) if current else None
     timeline = []
     for sample in reversed(samples):
+        if not eligible_image(sample):
+            continue
         result = compare(sample, reference) if reference else None
         timeline.append({'id': sample['id'], 'timestamp': sample['timestamp'], 'anomaly_score': result['anomaly_score'] if result and not result['is_reference_sample'] else None,
                          'visual_stability_score': result['visual_stability_score'] if result else None, 'status': result['status'] if result else 'insufficient_baseline',
@@ -324,7 +345,9 @@ def station_analysis(station_id: int, observation_id: Optional[int] = None,
                              f['name']: f['normalized_deviation'] for f in result['features']
                          } if result and not result['is_reference_sample'] else {}})
     # Persistence refers only to consecutive, independent observations in this reference context.
-    recent = [compare(o, reference) for o in samples[samples.index(current):samples.index(current)+3]] if current and reference else []
+    recent = [compare(o, reference) for o in
+              [o for o in samples[samples.index(current):] if eligible_image(o)][:3]
+              ] if current and reference and eligible_image(current) else []
     persistent = len(recent) == 3 and all(r['status'] == 'potential_anomaly' for r in recent)
     if comparison:
         comparison['persistent_screening_flag'] = persistent
@@ -333,6 +356,14 @@ def station_analysis(station_id: int, observation_id: Optional[int] = None,
             'baselines': baselines, 'comparison': comparison, 'timeline': timeline,
             'laboratory': records(db, station_id, 'laboratory'), 'context': records(db, station_id, 'context'),
             'actions': records(db, station_id, 'action'), 'limitations': LIMITATIONS}
+
+
+def eligible_baselines(db, station_id, samples=None):
+    if samples is None:
+        samples = observations(db, station_id)
+    blocked = {sample['id'] for sample in samples if not eligible_image(sample)}
+    return [baseline for baseline in records(db, station_id, 'baseline')
+            if blocked.isdisjoint(baseline['observation_ids'])]
 
 
 @router.get('/stations/{station_id}/report')

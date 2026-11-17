@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 from .ml.feature_schema import FEATURE_NAMES
+from .water_validation import eligible_image
 
 MIN_REFERENCE = 5
 
@@ -15,7 +16,12 @@ def uieb_reference():
 
 
 def compare_uieb(observation):
-    reference = uieb_reference()
+    if not eligible_image(observation):
+        return None
+    try:
+        reference = uieb_reference()
+    except (OSError, ValueError):
+        return None
     if observation.get('feature_extractor_version') != reference['feature_extractor_version']:
         return None
     features = observation.get('features') or {}
@@ -29,6 +35,8 @@ def compare_uieb(observation):
     if not deviations:
         return None
     return {
+        'reference_type': 'uieb',
+        'method': 'equal-weight-iqr-exponential-v1',
         'score': round(100 * float(np.exp(-0.35 * np.mean([abs(item['normalized_deviation']) for item in deviations]))), 1),
         'sample_count': reference['sample_count'],
         'comparable_features': len(deviations),
@@ -49,6 +57,8 @@ LIMITATIONS = (
 
 
 def build_reference(observations):
+    if any(not eligible_image(observation) for observation in observations):
+        raise ValueError('Every officer reference photo must pass water validation.')
     if len(observations) < MIN_REFERENCE:
         raise ValueError('At least five distinct eligible reference images are required.')
     matrix = np.array([[o['features'][f] for f in FEATURE_NAMES] for o in observations], dtype=float)
@@ -62,6 +72,13 @@ def build_reference(observations):
 
 
 def compare(observation, reference, previous=None):
+    if not eligible_image(observation):
+        return {'observation_id': observation['id'], 'features': [], 'anomaly_score': None,
+                'visual_stability_score': None, 'status': 'water_validation_required',
+                'threshold': THRESHOLD, 'is_reference_sample': False,
+                'comparable_features': 0, 'limitations': LIMITATIONS}
+    if previous and not eligible_image(previous):
+        previous = None
     same_context = bool(reference and observation['season'] == reference['season']
                         and observation['capture_protocol'] == reference['capture_protocol'])
     if same_context and reference.get('capture_settings'):

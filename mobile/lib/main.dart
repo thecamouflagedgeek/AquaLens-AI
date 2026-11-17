@@ -14,7 +14,7 @@ import 'package:uuid/uuid.dart';
 typedef Record = Map<String, dynamic>;
 const base = String.fromEnvironment(
   'AQUALENS_API_URL',
-  defaultValue: 'http://10.0.2.2:8000',
+  defaultValue: 'http://127.0.0.1:8000',
 );
 const origin = '/india/ground';
 const storage = FlutterSecureStorage();
@@ -74,14 +74,31 @@ String analysisStatus(Object? value) => switch (value) {
       'completed' => 'Completed',
       'features_extracted' => 'Descriptors extracted · classifier unavailable',
       'failed' => 'Analysis failed',
+      'validation_hold' => 'Analysis held for water validation',
       _ => 'Processing status unavailable',
     };
+
+String? waterValidationLabel(Record row) {
+  final validation = row['water_validation'] as Map?;
+  if (validation == null) return null;
+  final status = switch (validation['status']) {
+    'VALID_WATER_SOURCE' => 'Visible water detected',
+    'NO_WATER_DETECTED' => 'No water detected',
+    'INSUFFICIENT_VISIBILITY' => 'Insufficient visibility',
+    _ => 'Water validation needs review',
+  };
+  final score = validation['visibility_score'];
+  return score is num && score >= 1 && score <= 5 && validation['status'] == 'VALID_WATER_SOURCE'
+      ? '$status · Water visibility ${score.toInt()} / 5'
+      : '$status · Water visibility N/A';
+}
 
 String stabilityLabel(Record row) {
   final score = row['visual_stability_score'];
   if (score is num)
     return 'Visual stability: ${score.toStringAsFixed(1)} / 100';
   return switch (row['stability_status']) {
+    'water_validation_required' => 'Visual stability: N/A',
     'location_review_required' => 'Location review pending',
     'context_mismatch' => 'Capture settings do not match the baseline',
     'undefined_feature_scale' => 'Baseline cannot scale all descriptors',
@@ -303,7 +320,7 @@ class _FieldAppState extends State<FieldApp> {
       for (final row in pendingRows.reversed) {
         await update(row, 'Uploading');
         try {
-          await api.upload(row);
+          final submitted = await api.upload(row);
           await db.delete(
             'uploads',
             where: 'id=? AND owner=?',
@@ -313,6 +330,21 @@ class _FieldAppState extends State<FieldApp> {
             await File(row['file'] as String).delete();
           } on FileSystemException {
             /* Already removed. */
+          }
+          final validation = submitted['water_validation'] as Map?;
+          if (mounted && validation != null) {
+            final valid = validation['status'] == 'VALID_WATER_SOURCE';
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(valid
+                  ? waterValidationLabel(submitted)!
+                  : '${waterValidationLabel(submitted)}\n${validation['reason']}'),
+              action: valid
+                  ? null
+                  : SnackBarAction(
+                      label: 'Retake Photo',
+                      onPressed: () => unawaited(capture()),
+                    ),
+            ));
           }
         } on ApiFailure catch (e) {
           if (e.status == 401) {
@@ -753,7 +785,7 @@ class _FieldAppState extends State<FieldApp> {
               ),
               title: Text(stationName(row['station'])),
               subtitle: Text(
-                '${row['state']}${row['error'] == null ? '' : ' · ${row['error']}'}',
+                '${row['state'] == 'Uploading' ? 'Uploading and analysing photo…' : row['state']}${row['error'] == null ? '' : ' · ${row['error']}'}',
               ),
               trailing: row['state'] == 'Failed'
                   ? TextButton(
@@ -852,6 +884,7 @@ class _FieldAppState extends State<FieldApp> {
               isThreeLine: true,
               subtitle: Text(
                 '${localTimestamp(row['timestamp'], context)}\n'
+                '${waterValidationLabel(row) ?? 'Water validation pending'}\n'
                 '${analysisStatus(row['processing_status'])} · ${(row['classification'] as Map?)?['predicted_condition'] ?? 'Appearance unavailable'}\n'
                 '${stabilityLabel(row)}',
               ),
@@ -862,6 +895,10 @@ class _FieldAppState extends State<FieldApp> {
                     row: row,
                     station: stationName(row['station_id']),
                     online: online,
+                    onRetake: () {
+                      Navigator.of(context).pop();
+                      unawaited(capture());
+                    },
                   ),
                 ),
               ),
@@ -1082,12 +1119,14 @@ class ObservationDetail extends StatefulWidget {
   final Record row;
   final String station;
   final bool online;
+  final VoidCallback onRetake;
   const ObservationDetail({
     super.key,
     required this.api,
     required this.row,
     required this.station,
     required this.online,
+    required this.onRetake,
   });
   @override
   State<ObservationDetail> createState() => _ObservationDetailState();
@@ -1101,6 +1140,7 @@ class _ObservationDetailState extends State<ObservationDetail> {
   Widget build(BuildContext context) {
     final row = widget.row, gps = widget.row['ground'] as Map;
     final classifier = row['classification'] as Map?;
+    final validation = row['water_validation'] as Map?;
     return Scaffold(
       appBar: AppBar(title: const Text('Observation results'), actions: [
         IconButton(
@@ -1128,6 +1168,17 @@ class _ObservationDetailState extends State<ObservationDetail> {
           Text(
             'Capture: ${localTimestamp(row['timestamp'], context)}\nUploaded: ${localTimestamp(gps['uploaded_at'], context)}\nGPS: ${gps['latitude']}, ${gps['longitude']}\nOfficer: ${gps['officer']}\nAnalysis: ${row['processing_status']}',
           ),
+          if (validation != null)
+            Card(
+                child: ListTile(
+              title: Text(waterValidationLabel(row)!),
+              subtitle: Text(validation['reason']?.toString() ?? ''),
+              trailing: validation['status'] == 'VALID_WATER_SOURCE'
+                  ? null
+                  : TextButton(
+                      onPressed: widget.onRetake,
+                      child: const Text('Retake Photo')),
+            )),
           Card(
             child: ListTile(
               title: Text(

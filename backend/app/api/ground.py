@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from math import asin, cos, radians, sin, sqrt
 import json
 import os
+import cv2
+import numpy as np
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -15,8 +17,10 @@ from sqlalchemy.orm import Session
 
 from .deps import get_current_user
 from ..india_analysis import compare, compare_uieb
+from ..water_validation import METHOD, REVIEW, VALID, eligible_image, validate_water
 from .india import GROUND_CAPTURE_VALIDATION
-from .india import SampleMetadata, IndiaObservation, get_db, require_station, unpack, store_observation, station_analysis, list_stations, records, sample_image
+from .india import SampleMetadata, IndiaObservation, get_db, require_station, unpack, store_observation, station_analysis, list_stations, sample_image
+from .india import FILES, eligible_baselines, visual_analysis
 
 router = APIRouter(prefix='/india/ground', tags=['Ground monitoring'])
 
@@ -86,11 +90,14 @@ def my_observations(db: Session = Depends(get_db), user=Depends(officer)):
     baselines = {}
     for item in captures:
         item.update(visual_stability_score=None, baseline_version=None, stability_status='location_review_required')
+        if not eligible_image(item):
+            item['stability_status'] = 'water_validation_required'
+            continue
         if item['ground']['location_status'] != 'admin_verified':
             continue
         station_id = item['station_id']
         if station_id not in baselines:
-            baselines[station_id] = records(db, station_id, 'baseline')
+            baselines[station_id] = eligible_baselines(db, station_id)
         reference = next((baseline for baseline in baselines[station_id]
                           if baseline['season'] == item['season']
                           and baseline['capture_protocol'] == item['capture_protocol']), None)
@@ -118,7 +125,7 @@ def my_image(observation_id: int, db: Session = Depends(get_db), user=Depends(of
 def my_analysis(observation_id: int, db: Session = Depends(get_db), user=Depends(officer)):
     own_observation(db, observation_id, user)
     result = analysis(observation_id, db)
-    return {key: result[key] for key in ('comparison', 'reference')}
+    return {key: result[key] for key in ('comparison', 'reference', 'water_validation')}
 
 
 @router.get('/observations', dependencies=[Depends(admin)])
@@ -140,6 +147,39 @@ def verify_location(observation_id: int, db: Session = Depends(get_db)):
     return unpack(row)
 
 
+@router.post('/observations/{observation_id}/validate-water', dependencies=[Depends(admin)])
+def revalidate_water(observation_id: int, db: Session = Depends(get_db)):
+    row = db.get(IndiaObservation, observation_id)
+    if not row or not unpack(row).get('ground'):
+        raise HTTPException(404, 'Ground observation not found.')
+    current = unpack(row)
+    previous = current['water_validation']
+    if previous['status'] != REVIEW and previous.get('method') == METHOD:
+        return current
+    try:
+        contents = (FILES / row.filename).read_bytes()
+    except OSError as error:
+        raise HTTPException(404, 'Original capture is unavailable.') from error
+    decoded = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
+    if decoded is None:
+        raise HTTPException(422, 'Original capture could not be decoded.')
+    validation = validate_water(decoded)
+    # Refresh before writing so a concurrent location review is retained.
+    db.refresh(row)
+    payload = json.loads(row.payload)
+    payload.update(water_validation=validation, eligible=False)
+    if validation['status'] == VALID:
+        payload.update(visual_analysis(decoded))
+    else:
+        payload.update(features={}, classification=None, processing_error=None,
+                       feature_extractor_version=None, processing_status='validation_hold')
+    if not payload.get('benchmark_water_confirmed') or eligible_image(payload):
+        payload['uieb_comparison'] = compare_uieb(payload)
+    row.payload = json.dumps(payload, allow_nan=False)
+    db.commit()
+    return unpack(row)
+
+
 def nearest_reference(sample, station_id, db):
     ground = sample['ground']
     candidates = sorted(
@@ -148,7 +188,7 @@ def nearest_reference(sample, station_id, db):
         key=lambda candidate: candidate[0],
     )
     for distance, site in candidates:
-        for reference in records(db, site['id'], 'baseline'):
+        for reference in eligible_baselines(db, site['id']):
             if not reference.get('capture_settings') or reference.get('sample_count', 0) < 5:
                 continue
             # Observation IDs are global; compare() also checks acquisition compatibility.
@@ -180,6 +220,7 @@ def analysis(observation_id: int, db: Session = Depends(get_db)):
     verified = sample['ground']['location_status'] == 'admin_verified'
     result = station_analysis(row.station_id, observation_id=observation_id, db=db)
     return {
+        'water_validation': sample['water_validation'],
         'comparison': result['comparison'] if verified else None,
         'reference': result['reference'] if verified else None,
         'nearest_station': {
@@ -188,10 +229,11 @@ def analysis(observation_id: int, db: Session = Depends(get_db)):
         } if nearest else None,
         'nearby_reference': (
             nearest_reference(sample, row.station_id, db)
-            if verified and (result['comparison'] or {}).get('visual_stability_score') is None
+            if verified and eligible_image(sample) and (result['comparison'] or {}).get('visual_stability_score') is None
             else None
         ),
-        'uieb_comparison': compare_uieb(sample),
+        'uieb_comparison': (sample.get('uieb_comparison') if sample.get('benchmark_water_confirmed') else
+                            (sample.get('uieb_comparison') or compare_uieb(sample)) if eligible_image(sample) else None),
         'laboratory': result['laboratory'],
         'context': result['context'],
     }
@@ -202,6 +244,8 @@ def analysis(observation_id: int, db: Session = Depends(get_db)):
 def explain_observation(observation_id: int, db: Session = Depends(get_db)):
     result = analysis(observation_id, db)
     sample = unpack(db.get(IndiaObservation, observation_id))
+    if not eligible_image(sample):
+        return {'explanation': sample['water_validation']['reason']}
     comparison = result['comparison'] or {}
     classification = sample.get('classification') or {}
     config = dotenv_values(BASE_DIR / '.env', encoding='utf-8-sig')
